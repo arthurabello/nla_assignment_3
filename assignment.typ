@@ -96,22 +96,138 @@ $ <equation_example_polynomial_introduction>
 
 This is due to the round-off errors when $x approx 0$ and the big coefficients of the polynomial. In general, polynomial are very sensitive to perturbations in the coefficients, which is why rootfinding is a bad idea to find eigenvalues.
 
-One could also try the following:
-
-+ Compute $herm(A) A$
-
-+ 
-
-
+Here we discuss aspects of some iterative eigenvalue algorithms, such as power iteration, inverse iteration, and QR iteration.
 
 = Hessemberg Reduction (Problem 1)
 <section_hessemberg_reduction>
-
 == Calculating the Householder Reflectors (a)
 <section_calculating_householder_reflectors>
 
-== Checking the Result (b)
-<section_checking_the_result>
+The following function calculates the Householder reflectors that reduce a matrix to Hessenberg form. It returns the reflector vectors, the compact Hessenberg matrix $H$, and the accumulated orthogonal factor $Q$.
+
+```python
+import numpy as np
+import time
+from typing import List, Tuple
+
+
+def build_householder_unit_vector(
+        target_vector: np.ndarray
+) -> np.ndarray:
+    
+    """
+    Builds a Householder unit vector
+
+    Args:
+        1. target_vector (np.ndarray): Column vector that we want to annihilate (size ≥ 1).
+
+    Returns:
+        np.ndarray:
+            The normalised Householder vector (‖v‖₂ = 1) with a real first component.
+
+    Raises:
+        1. ValueError: If 'target_vector' has zero length.
+    """
+
+    if target_vector.size == 0:
+        raise ValueError("The target vector is empty; no reflector needed.")
+
+    vector_norm: float = np.linalg.norm(target_vector)
+
+    if vector_norm == 0.0: #nothing to annihilate – return canonical basis vector
+        householder_vector: np.ndarray = np.zeros_like(target_vector)
+        householder_vector[0] = 1.0
+        return householder_vector
+
+    sign_correction: float = (
+        1.0 if target_vector[0].real >= 0.0 else -1.0
+    )
+    copy_of_target_vector: np.ndarray = target_vector.copy()
+    copy_of_target_vector[0] += sign_correction * vector_norm
+    householder_vector: np.ndarray = (
+        copy_of_target_vector / np.linalg.norm(copy_of_target_vector)
+    )
+    return householder_vector
+
+
+def to_hessenberg(
+        original_matrix: np.ndarray,
+) -> Tuple[List[np.ndarray], np.ndarray, np.ndarray]:
+    
+    """
+    Reduce 'original_matrix' to upper Hessenberg form by Householder reflections.
+
+    Args
+        1. original_matrix (np.ndarray): Real or complex square matrix of order 'matrix_order'.
+
+    Returns
+        Tuple consisting of:
+
+        1. householder_reflectors_list (List[np.ndarray])
+        2. hessenberg_matrix (np.ndarray)
+        3. accumulated_orthogonal_matrix (np.ndarray)  s.t.
+          original_matrix = Q · H · Qᴴ
+
+    Raises
+        1. ValueError: If 'original_matrix' is not square.
+    """
+
+    working_matrix: np.ndarray = np.asarray(original_matrix).copy()
+
+    if working_matrix.shape[0] != working_matrix.shape[1]:
+        raise ValueError("Input matrix must be square.")
+
+    matrix_order: int = working_matrix.shape[0]
+    accumulated_orthogonal_matrix: np.ndarray = np.eye(
+        matrix_order, dtype=working_matrix.dtype
+    )
+    householder_reflectors_list: List[np.ndarray] = []
+
+    for column_index in range(matrix_order - 2): #extract the part of column 'column_index' that we want to zero out
+        target_column_segment: np.ndarray = working_matrix[
+            column_index + 1 :, column_index
+        ]
+
+        householder_vector: np.ndarray = build_householder_unit_vector(
+            target_column_segment
+        )  #build Householder vector for this segment
+        householder_reflectors_list.append(householder_vector)
+
+        #expand it to the full matrix dimension
+        expanded_householder_vector: np.ndarray = np.zeros(
+            matrix_order, dtype=working_matrix.dtype
+        )
+        expanded_householder_vector[column_index + 1 :] = householder_vector
+
+
+        working_matrix -= 2.0 * np.outer( 
+            expanded_householder_vector,
+            expanded_householder_vector.conj().T @ working_matrix,
+        ) #apply reflector from BOTH sides
+        working_matrix -= 2.0 * np.outer(
+            working_matrix @ expanded_householder_vector,
+            expanded_householder_vector.conj().T,
+        )
+
+        #accumulate Q
+        accumulated_orthogonal_matrix -= 2.0 * np.outer(
+            accumulated_orthogonal_matrix @ expanded_householder_vector,
+            expanded_householder_vector.conj().T,
+        )
+
+    hessenberg_matrix: np.ndarray = working_matrix
+    return (
+        householder_reflectors_list,
+        hessenberg_matrix,
+        accumulated_orthogonal_matrix,
+    )
+
+```
+
+We will evaluate this function in @section_evaluating_the_function.
+
+== Evaluating the Function (b)
+<section_evaluating_the_function>
 
 == Complexity (c)
 <section_complexity>
