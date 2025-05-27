@@ -41,9 +41,10 @@
 
 //shortcuts
 
-#let inv(arg) = $arg^(-1)$
+#let inv(arg, power) = $arg^(-power)$
 #let herm(arg) = $arg^*$
 #let transpose(arg) = $arg^T$
+#let inner(var1, var2) = $angle.l var1, var2 angle.r$
 
 
 #align(center, text(20pt)[
@@ -503,14 +504,167 @@ To understand why the complexity is $O(n^3)$ in the general case, we can look at
 
 On the symmetric case we know that reflectors will be applied in only one side of the matrix, since $transpose(v) A = transpose(A v)$. That is precisely what the function `generate_random_matrix` does. Which cuts complexity from the expected $O(n^3)$ seen in the previous section to a $O(n^2)$ #footnote[See page 194 of #link("https://www.stat.uchicago.edu/~lekheng/courses/309/books/Trefethen-Bau.pdf")[Trefethen & Bau's Numerical Linear Algebra book]].
 
-= Orthogonal Matrices (Problem 2)
+= Orthogonal Matrices (Problem 2) (a)
 <section_orthogonal_matrices>
 
-== Eigenvalues and Iterative Methods (a)
+Here we will discuss how does orthogonal matrices behave when we  the power iteration, inverse iteration and the QR iteration with a very specific shift.
+
+So let $Q in CC^(m times n)$ be an orthogonal matrix. We are interested in its eigenvalues $lambda$. We know that:
+
+$
+  Q x = lambda x <=> transpose(x) Q x = lambda transpose(x) x\
+
+  <=> Q inner(x, x) = lambda inner(x, x)\
+$
+
+Since $Q$ preserves inner product, we have:
+
+$
+  Q inner(x, x) = lambda inner(x, x) <=> inner(x, x) = lambda inner(x, x)\
+
+  <=> abs(lambda) = 1
+$
+
+So $lambda$ lies in the unit circle, i.e $lambda = e^(i phi), phi in RR$. We discuss what happens in some iterative methods below:
+
+== Orthogonal Matrices and the Power Method
+<section_orthogonal_matrices_and_power_method>
+
+The power method is better discussed in @section_power_iteration. Here we will write straight forward the result:
+
+$
+  Q^n x = 1 / lambda_j^n dot sum_(i = 1)^m lambda_i^n phi_i v_i
+$ <equation_orthogonal_power_iteration>
+
+Where $lambda_i$ are the eigenvalues of $Q$, $phi_i$ are the coefficients of the expansion of $x$ in the basis of eigenvectors $v_i$. Since we have that $abs(lambda_i) = 1$, we have:
+
+The fact that $abs(lambda_i) = 1 => abs(lambda_i^n) = 1$ is sufficiently enough for one to be convinced that power iteration does not converge.
+
+Let $lambda_k = e^(i psi_k)$, where $psi_k in RR$. Then expanding @equation_orthogonal_power_iteration:
+
+$
+    Q^n x = 1 / e^(i psi_j dot n) dot sum_(tau = 1)^m e^(i psi_tau n) phi_tau v_tau
+$
+
+When $n -> oo$ if $lambda_j = 1$ then we have:
+
+$
+  Q^n x = phi_j v_j + sum_(tau != j) e^(i psi_tau n) phi_tau v_tau
+$
+
+Since no eigenvalue dominates other eigenvalues in the orthogonal case, usually power iteration fails.
+
+== Orthogonal Matrices and Inverse Iteration
+<section_orthogonal_matrices_and_inverse_iteration>
+
+Inverse iteration is better discussed in @section_inverse_iteration. Here we will write straight forward the result:
+
+
+
+== Eigenvalues and Iterative Methods
 <section_eigenvalues_and_iterative_methods>
+=== Power iteration
+<section_power_iteration>
+
+The power iteration consists on computing large powers of the sequence:
+
+$
+  x / norm(x) , (A x) / norm(A x) , (A^2 x) / norm(A^2 x), dots, A in CC^(m times m)
+$
+
+To see why this sequence converges(under good assumptions), let $A$ be diagonalizable. And write:
+
+$
+  x = sum_(i = 1)^m phi_i v_i
+$
+
+In a basis of eigenvectors $v_i$ with respective eigenvalues $lambda_i$. Then for $x in CC^m$ we have:
+
+$
+  A x = sum_(i = 1)^m lambda_i phi_i v_i
+$
+
+Or even better:
+
+$
+  A^n x = sum_(i = 1)^m lambda_i^n phi_i v_i
+$
+
+Let $v_j$ be the eigenvector associated to the biggest eigenvalue $lambda_j$, then we have:
+
+$
+  A^n x = 1 / lambda_j^n dot sum_(i = 1)^m lambda_i^n phi_i v_i = (lambda_1^n) / (lambda_j^n) phi_1 v_1 + dots + phi_j v_j + dots + lambda_m^n / (lambda_j^n) phi_m v_m
+$
+
+When $n -> oo$ all of the smaller $lambda_k / lambda_j$ will approach $0$, so we have:
+
+$
+  lim_(n -> oo) A^n x = phi_j v_j 
+$
+
+So the denominator on the original expression becomes
+
+$
+  norm(A^n x) = norm(phi_j v_j) = abs(phi_j) norm(v_j)
+$
+
+And the limit is:
+
+$
+  lim_(n -> oo) (A^n x) / norm(A^n x) = (phi_j v_j) / (abs(phi_j) norm(v_j)) 
+$
+
+Since $phi_j / abs(phi_j) = plus.minus 1$, the sequence converges to $plus.minus v_j$ uga buga
+
+=== Inverse Iteration
+<section_inverse_iteration>
+
+Consider $mu in RR without Lambda$, where $Lambda$ is the set of eigenvalues of $A$. The eigenvalues $hat(lambda)$ of $inv((A - mu I), 1)$ are:
+
+$
+  det(A - mu I - hat(lambda) I) = 0 <=> det(A - (mu + hat(lambda)) I) = 0\
+
+    <=> hat(lambda)_j = 1 / (lambda_j - mu)
+$
+
+Where $lambda_j$ are the eigenvalues of $A$. So if $mu$ is close to an eigenvalue, then $hat(lambda)$ will be large. Power iteration seems interesting here, so the sequence:
+
+$
+  x / norm(x), (inv((A - mu I), 1) x) / norm(inv((A - mu I), 1) x), (inv((A - mu I), 2) x) / norm(inv((A - mu I), 2) x), dots
+$
+
+Converges to the eigenvector associated to the eigenvalue $hat(lambda)$, which is close to $lambda$.
 
 == The *$2 times 2$* Case (b)
 <section_2x2_case>
+
+We will calculate the eigenvalues of:
+
+$
+  A = mat(a, b; c, d)
+$
+
+With $a, b, c, d in RR$. The characteristic polynomial gives us:
+
+$
+  det(A - lambda I) = 0 <=> det mat(
+    a - lambda, b;
+    c, d - lambda
+  ) = 0\
+
+  <=> (a - lambda)(d - lambda) - b c = 0
+  <=> lambda^2 + lambda(-a -d) + (a d - b c) = 0\
+  <=> lambda = (a + d) plus.minus sqrt((a + d)^2 - 4(a d - b c)) / 2
+$
+
+So if $sqrt((a + d)^2 - 4(a d - b c)) in RR <=> (a + d)^2 - 4(a d - b c) >= 0$, the eigenvalues are:
+
+$
+  lambda_1 = (a + d + sqrt((a + d)^2 - 4(a d - b c))) / 2\
+
+  lambda_2 = (a + d - sqrt((a + d)^2 - 4(a d - b c))) / 2
+$
+
 
 == Random Orthogonal Matrices (c)
 <section_random_orthogonal_matrices>
