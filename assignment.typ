@@ -7,6 +7,7 @@
 #show: codly-init.with()
 #show: thmrules.with(qed-symbol: $square$)
 #show link: underline
+#show ref: underline
 
 #set heading(numbering: "1.1.")
 #set page(numbering: "1")
@@ -226,14 +227,281 @@ def to_hessenberg(
 
 We will evaluate this function in @section_evaluating_the_function.
 
-== Evaluating the Function (b)
+== Evaluating the Function (b), (c), (d)
 <section_evaluating_the_function>
 
-== Complexity (c)
+We present another algorithm for evaluating the function `to_hessenberg(A)` for random matrices of various sizes, inputed by the user, which also gets to choose if symmetric matrices will be generated or not.
+
+```python
+import numpy as np
+import time
+import pandas as pd
+import matplotlib.pyplot as plt
+import math
+from IPython.display import display, Markdown
+from ast import literal_eval
+
+#RANDOM MATRIX GENERATOR
+def generate_random_matrix(n:int, distribution:str="normal",
+                           symmetric:bool=False, seed:int|None=None):
+    rng = np.random.default_rng(seed)
+    if distribution == "normal":
+        A = rng.standard_normal((n, n))
+    elif distribution == "uniform":
+        A = rng.uniform(-1.0, 1.0, size=(n, n))
+    else:
+        raise ValueError("distribution must be 'normal' or 'uniform'")
+    return (A + A.T) / 2.0 if symmetric else A
+
+
+#REFLECTOR CALCULATOR
+def _house_vec(x:np.ndarray) -> np.ndarray:
+
+    """
+    Builds a Householder reflector for a given column vector x.
+    Args:
+        x (np.ndarray): Column vector to be transformed.
+    Returns:
+        np.ndarray: Normalised Householder vector with a real first component.
+    Raises:
+        None
+    """
+
+    sigma = np.linalg.norm(x)
+    if sigma == 0.0:
+        e1 = np.zeros_like(x)
+        e1[0] = 1.0
+        return e1
+    sign = 1.0 if x[0].real >= 0.0 else -1.0
+    v = x.copy()
+    v[0] += sign * sigma
+    return v / np.linalg.norm(v)
+
+def hessenberg_reduction(A_in:np.ndarray, symmetric:bool=False, accumulate_q:bool=True):
+
+    """
+    Reduces a matrix to upper Hessenberg form using Householder reflections.
+    Args:
+        A_in (np.ndarray): Input matrix to be reduced.
+        symmetric (bool): If True, treat the matrix as symmetric and reduce to tridiagonal form.
+        accumulate_q (bool): If True, accumulate the orthogonal matrix Q.
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: The reduced matrix in Hessenberg form and the orthogonal matrix Q.
+    Raises:
+        None
+    """
+
+    A = A_in.copy()
+    n = A.shape[0]
+    Q = np.eye(n, dtype=A.dtype)
+
+    if not symmetric:    #GENERAL caSe
+        for k in range(n-2):
+            v = _house_vec(A[k+1:, k])
+            w = np.zeros(n, dtype=A.dtype)
+            w[k+1:] = v
+            A -= 2.0 * np.outer(w, w.conj().T @ A)
+            A -= 2.0 * np.outer(A @ w, w.conj().T)
+            if accumulate_q:
+                Q -= 2.0 * np.outer(Q @ w, w.conj().T)
+        return A, Q
+
+    #SYMMETRIC TRIDIAGONAL CASE
+    for k in range(n-2):
+        x = A[k+1:, k]
+        v = _house_vec(x)
+        beta = 2.0
+
+        w = A[k+1:, k+1:] @ v   #trailing submatrix rank-2 update (A ← A − v wᵀ − w vᵀ)
+        tau = beta * 0.5 * (v @ w)
+        w -= tau * v
+        A[k+1:, k+1:] -= beta * np.outer(v, w) + beta * np.outer(w, v)
+
+        new_val = -np.sign(x[0]) * np.linalg.norm(x)   #store the single sub-diagonal element, zero the rest
+        A[k+1, k] = new_val
+        A[k, k+1] = new_val
+        A[k+2:, k] = 0.0
+        A[k, k+2:] = 0.0
+
+        if accumulate_q:  #accumulate Q if requested
+            Q[:, k+1:] -= beta * np.outer(Q[:, k+1:] @ v, v)
+
+    A = np.triu(A) + np.triu(A, 1).T  #force symmetry
+    return A, Q
+
+
+#VERIFYING PART
+def verify_factorisation_once(n:int, dist:str, symmetric:bool, seed:int|None):
+
+    """
+    Verifies the factorisation of a random matrix of size n.
+    Args:
+        n (int): Size of the matrix.
+        dist (str): Distribution type ('normal' or 'uniform').
+        symmetric (bool): Whether the matrix is symmetric.
+        seed (int | None): Random seed for reproducibility.
+    Returns:
+        None
+    Raises:
+        None
+    """
+
+    A = generate_random_matrix(n, dist, symmetric, seed)
+    T, Q = hessenberg_reduction(A, symmetric=symmetric)
+    res_fact = np.linalg.norm(A - Q @ T @ Q.T)
+    res_orth = np.linalg.norm(Q.T @ Q - np.eye(n))
+    colour = "green" if res_fact < 1e-11 else "red"
+    typ = "symmetric" if symmetric else "general"
+    display(Markdown(
+        f"**{n}×{n} {typ}**  \n"
+        f"<span style='color:{colour}'>‖A − Q T Qᵀ‖ = {res_fact:.2e}</span>  \n"
+        f"‖QᵀQ − I‖ = {res_orth:.2e}"
+    ))
+
+
+def benchmark_hessenberg(size_list, dist:str, mode:str, seed:int|None, reps_small:int=5):
+
+    """
+    Benchmark the Hessenberg reduction for various matrix sizes and types.
+    Args:
+        size_list (list of int): List of matrix sizes to test.
+        dist (str): Distribution type ('normal' or 'uniform').
+        mode (str): Matrix type ('general', 'symmetric', or 'both').
+        seed (int | None): Random seed for reproducibility.
+        reps_small (int): Number of repetitions for small matrices.
+    Returns:
+        pd.DataFrame: DataFrame containing the benchmark results.
+    Raises:
+        None
+    """
+
+    records = []
+    for n in size_list:
+        for sym in ([False, True] if mode=="both" else [mode=="symmetric"]):
+            A = generate_random_matrix(n, dist, sym, seed)
+
+            t0 = time.perf_counter()
+            hessenberg_reduction(A, symmetric=sym, accumulate_q=False)
+            probe = time.perf_counter() - t0
+            reps = reps_small if probe*reps_small >= 1.0 else math.ceil(1.0 / probe)
+
+            times = []
+            for _ in range(reps):
+                start = time.perf_counter()
+                hessenberg_reduction(A, symmetric=sym, accumulate_q=False)
+                times.append(time.perf_counter() - start)
+
+            records.append(dict(size=n,
+                                type="symmetric" if sym else "general",
+                                reps=reps,
+                                avg=np.mean(times)))
+
+    df = pd.DataFrame(records)
+    display(df.style.format({"avg":"{:.3e}"}).hide(axis="index"))
+
+    plt.figure(figsize=(7,5))
+    mark = {"general":"o", "symmetric":"s"}
+    for label, sub in df.groupby("type"):
+        plt.loglog(sub["size"], sub["avg"], marker=mark[label], ls="-", label=label)
+        if len(sub) > 1:
+            a,b = np.polyfit(np.log10(sub["size"]), np.log10(sub["avg"]), 1)
+            plt.loglog(sub["size"], 10**(b+a*np.log10(sub["size"])),
+                       "--", label=f"{label} fit ~ $n^{a:.2f}$")
+    plt.xlabel("matrix size  (log)")
+    plt.ylabel("runtime [s]  (log)")
+    plt.title("Hessenberg (general)  vs  Tridiagonal (symmetric)")
+    plt.grid(True, which="both", ls=":")
+    plt.legend(); plt.tight_layout(); plt.show()
+    return df
+
+
+#===INTERACTIVE PART=========================================================
+try:
+    raw = input("\nMatrix sizes (Python list) (e.g): [64,128,256,512,1024]: ")
+    sizes = literal_eval(raw) if raw.strip() else [64,128,256,512,1024]
+except Exception:
+    print("Bad list -> using default.")
+    sizes = [64,128,256,512,1024]
+
+dist = input("Distribution ('normal'/'uniform')  [normal]: ").strip().lower() or "normal"
+mode_txt = input("Matrix type g=general, s=symmetric, b=both  [g]: ").strip().lower() or "g"
+mode = "symmetric" if mode_txt=="s" else "both" if mode_txt=="b" else "general"
+seed_txt = input("Random seed (None/int) [None]: ").strip()
+seed_val = None if seed_txt.lower() in {"", "none"} else int(seed_txt)
+
+for sym in ([False, True] if mode=="both" else [mode=="symmetric"]): #accuracy on largest size
+    verify_factorisation_once(max(sizes), dist, sym, seed_val)
+
+benchmark_hessenberg(sizes, dist, mode, seed_val) #timings
+
+```
+
+The reader should be aware that my poor #link("https://www.dell.com/support/manuals/pt-br/inspiron-15-5590-laptop/inspiron-5590-setup-and-specifications/specifications-of-inspiron-5590?guid=guid-7c9f07ce-626e-44ca-be3a-a1fb036413f9&lang=en-us")[Dell Inspiro 5590] has crashed precisely $5$ times while i was writing this. The runtime was around $4$ minutes for a matrix $A approx 10^3 times 10^3$.
+
+An expected output is:
+
+```python
+64×64 general
+‖A − Q T Qᵀ‖ = 7.51e-14
+‖QᵀQ − I‖ = 7.07e-15
+
+64×64 symmetric
+‖A − Q T Qᵀ‖ = 4.83e-14
+‖QᵀQ − I‖ = 7.39e-15
+
+128×128 general
+‖A − Q T Qᵀ‖ = 1.84e-13
+‖QᵀQ − I‖ = 1.26e-14
+
+128×128 symmetric
+‖A − Q T Qᵀ‖ = 1.14e-13
+‖QᵀQ − I‖ = 1.25e-14
+
+256×256 general
+‖A − Q T Qᵀ‖ = 4.70e-13
+‖QᵀQ − I‖ = 2.28e-14
+
+256×256 symmetric
+‖A − Q T Qᵀ‖ = 2.78e-13
+‖QᵀQ − I‖ = 2.25e-14
+
+512×512 general
+‖A − Q T Qᵀ‖ = 1.16e-12
+‖QᵀQ − I‖ = 4.10e-14
+
+512×512 symmetric
+‖A − Q T Qᵀ‖ = 7.10e-13
+‖QᵀQ − I‖ = 4.09e-14
+
+1024×1024 general
+‖A − Q T Qᵀ‖ = 3.05e-12
+‖QᵀQ − I‖ = 7.57e-14
+
+1024×1024 symmetric
+‖A − Q T Qᵀ‖ = 1.84e-12
+‖QᵀQ − I‖ = 7.64e-14
+```
+As $n$ grows, we observe that the residuals also grow, but still in machine precision. The difference between the symmetric and nonsymmetric cases are more pronounced in larger matrices.
+
+
+#figure(
+    image("images/plot_hessenberg_function_evaluation.png", width: 100%),
+    caption: [
+        Runtime of the Hessenberg reduction for ordinary and symmetric matrices
+    ]
+) <figure_plot_evaluation_hessenberg_function>
+
+=== Complexity (c)
 <section_complexity>
 
-== The Symmetric Case (d)
+@figure_plot_evaluation_hessenberg_function shows the expected $O(n^3)$ complexity for the general case and $O(n^2)$ for the symmetric case. The latter is better discussed in @section_symmetric_case.
+
+To understand why the complexity is $O(n^3)$ in the general case, we can look at the algorithm. The outer loop runs $n - 2$ times, and inside it, we have two matrix-vector products and two outer products, which are all $O(n^2)$. Thus, the total complexity is $O(n^3)$.
+
+=== The Symmetric Case (d)
 <section_symmetric_case>
+
+On the symmetric case we know that reflectors will be applied in only one side of the matrix, since $transpose(v) A = transpose(A v)$. That is precisely what the function `generate_random_matrix` does. Which cuts complexity from the expected $O(n^3)$ seen in the previous section to a $O(n^2)$ #footnote[See page 194 of #link("https://www.stat.uchicago.edu/~lekheng/courses/309/books/Trefethen-Bau.pdf")[Trefethen & Bau's Numerical Linear Algebra book]].
 
 = Orthogonal Matrices (Problem 2)
 <section_orthogonal_matrices>
