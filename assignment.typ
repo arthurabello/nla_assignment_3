@@ -634,15 +634,15 @@ Since no eigenvalue dominates other eigenvalues in the orthogonal case, usually 
 == Orthogonal Matrices and Inverse Iteration
 <section_orthogonal_matrices_and_inverse_iteration>
 
-If we apply inverse iteration to an orthogonal matrix with a shift $mu$, we have:
+We know that if $A in CC^(m times m), det(A) != 0$ has $Lambda subset RR := {lambda_j}$ as eigenvalues, then the eigenvalues of $inv(A, 1)$ are $inv(lambda_j, 1)$. Similarly the eigenvalues of $A + phi I$ are $lambda_j + phi$. So the eigenvalues of $inv((A - mu I), 1), mu in RR without Lambda$ are:
 
 $
-  det(Q - mu I - hat(lambda) I) = 0 <=> det(Q - (mu + hat(lambda)) I) = 0\
-
-  <=> hat(lambda)_j = 1 / (lambda_j - mu)
+  hat(lambda_j) = 1 / (lambda_j - mu)
 $
 
-We know that the eigenvalues of $Q$ are on the unit circle, so if $mu$ is close to an eigenvalue $lambda_j$, $hat(lambda_j)$ will be huge (dominant), which makes power iteration converge to the eigenvector associated to $hat(lambda_j)_j$, which is the eigenvector associated to $lambda_j$. The fact that the eigenvalues are on the unit circle also contributes to the convergence of the method.
+So let $Q in CC^(m times m)$ be an orthogonal matrix. We are interested in applying invers iteration to $Q$.
+
+We know that the eigenvalues of $Q$ are on the unit circle, so if $mu$ is close to an eigenvalue $lambda_j$, $hat(lambda)_j$ will be huge (dominant), which makes power iteration converge to the eigenvector associated to $hat(lambda)_j$, which is the eigenvector associated to $lambda_j$. The fact that the eigenvalues are on the unit circle also contributes to the convergence of the method.
 
 So we concude that inverse iteration works well for orthogonal matrices, _if $mu$ is close to an eigenvalue of $Q$_.
 
@@ -1446,295 +1446,3274 @@ So we observe that in the $2 times 2$ blocks analyzed:
 Now we use an eigenvalue of the $2 times 2$ block as a shift:
 
 ```python
-def qr_iteration_with_fixed_shift(H, mu, max_iter=100):
-
-    """
-    Applies QR iteration with fixed shift on a matrix H.
+def pretty(arr: np.ndarray, prec: int = 3) -> str:
     
-    Args:
-        H (np.ndarray): initial matrix in Hessenberg form.
-        mu (complex): fixed shift to be used.
-        max_iter (int): maximum number of iterations.
-    
-    Returns:
-        Hk (np.ndarray): matrix after iterations.
-        converged (bool): whether it converged to almost upper triangular form.
     """
-
-    Hk = H.copy()
-    n = Hk.shape[0]
-    
-    for _ in range(max_iter):
-        H_shifted = Hk - mu * np.eye(n)
-        Q, R = np.linalg.qr(H_shifted)
-        Hk = R @ Q + mu * np.eye(n)
-        
-    subdiag = np.abs(np.diag(Hk, k=-1))
-    tol = 1e-5
-    converged = np.all(subdiag < tol)
-    return Hk, converged
-
-def run_qr_iteration_with_shifts(n=4, n_matrices=30):
-
-    """
-    Runs QR iteration with fixed shift on randomly generated orthogonal matrices.
+    Compact string for a 1-D NumPy array.
 
     Args:
-        n (int): Size of the matrices (n x n).
-        n_matrices (int): Number of orthogonal matrices to generate and analyze.
-
+        arr (np.ndarray): Input array to be formatted.
+        prec (int): Precision for the string representation.
     Returns:
-        None
-
+        str: Formatted string representation of the array.
     Raises:
         None
     """
 
-    for i in range(n_matrices):
-        print(f"\n--- Orthogonal Matrix Q number {i+1} ---")
-        Q = generate_orthogonal_matrix_qr(n=n)
+    return np.array_str(arr, precision=prec, suppress_small=True)
+
+def qr_iteration_with_fixed_shift(
+    H: np.ndarray,
+    mu: complex,
+    *,
+    max_iter: int = 100,
+    tol: float = 1e-10,
+    debug: bool = False,
+):
+    """
+    Fixed-shift QR iteration that optionally shows the sub-diagonal before the first step and after the final step.
+
+    Args:
+        H (np.ndarray): initial matrix in Hessenberg form.
+        mu (complex): fixed shift to be used.
+        max_iter (int): maximum number of iterations.
+        tol (float): tolerance for convergence.
+        debug (bool): if True, print detailed information about each iteration.
+    
+    Returns:
+        Hk (np.ndarray): matrix after iterations.
+        converged (bool): whether it converged to almost upper triangular form.
+        iterations (int): number of iterations performed.
+    Raises:
+        None
+    """
+
+    Hk = H.astype(np.complex128, copy=True)
+    n = Hk.shape[0]
+
+    if debug:
+        init_sub = np.diag(Hk, k=-1)
+        print("  before: subdiag=" + pretty(init_sub) +
+              f",  ‖·‖₂={np.linalg.norm(init_sub):.3e}")
+
+    for k in range(max_iter):
+        Q, R = np.linalg.qr(Hk - mu * np.eye(n))
+        Hk = R @ Q + mu * np.eye(n)
+
+        sub = np.diag(Hk, k=-1)
+        if debug:
+            print(
+                f"  iter {k:02d}: subdiag=" + pretty(sub) +
+                f",  ‖·‖₂={np.linalg.norm(sub):.3e}"
+            )
+
+        if np.all(np.abs(sub) < tol):
+            break  #tests convergence
+
+    if debug: #final sub-diagonal
+        final_sub = np.diag(Hk, k=-1)
+        print("  after : subdiag=" + pretty(final_sub) +
+              f",  ‖·‖₂={np.linalg.norm(final_sub):.3e}")
+
+    converged = np.all(np.abs(np.diag(Hk, k=-1)) < tol)
+    return Hk, converged, min(k + 1, max_iter)
+
+
+def run_qr_iteration_with_shifts_and_debug(
+    *,
+    n: int = 4,
+    n_matrices: int = 30,
+    max_iter: int = 50,
+    debug: bool = False,
+):
+    """
+    Runs the QR iteration with fixed shifts on randomly generated orthogonal matrices,
+    printing a summary for each matrix. Detailed logging appears only when debug = True.
+
+    Args:
+        n (int): Size of the matrices (n x n).
+        n_matrices (int): Number of orthogonal matrices to generate and analyze.
+        max_iter (int): Maximum number of iterations for the QR iteration.
+        debug (bool): If True, print detailed information about each iteration.
+        
+    Returns:
+        None
+    Raises:
+        None
+    """
+
+    for idx in range(1, n_matrices + 1):
+        print(f"\n┌─ Matrix {idx:02d}/{n_matrices}  (size {n}x{n})")
+
+        Q = generate_orthogonal_matrix_qr(n)
         _, H, _ = to_hessenberg(Q)
-        
-        final_block = H[-2:, -2:]
-        a, b, c, d = final_block[0,0], final_block[0,1], final_block[1,0], final_block[1,1]
-        shift_candidates = analytical_eigenvalues_2x2(a, b, c, d)
-        
-        mu = shift_candidates[0]  #use the first eigenvalue as fixed shift
-        print(f"Fixed shift used (eigenvalue of the final block): {mu} (modulus {abs(mu):.4f})")
-        
-        Hk, converged = qr_iteration_with_fixed_shift(H, mu, max_iter=20)
-        
-        print("Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):")
-        print(np.array_str(np.diag(Hk, k=-1), precision=3, suppress_small=True))
-        
-        print(f"Converged to almost upper triangular form? {'Yes' if converged else 'No'}")
-        print("-" * 50)
+
+        a, b, c, d = H[-2:, -2:].ravel()
+        ev1, ev2 = analytical_eigenvalues_2x2(a, b, c, d)
+        mu = ev1 if abs(ev1 - H[-1, -1]) < abs(ev2 - H[-1, -1]) else ev2
+        print(f"│  fixed shift μ = {mu:.6g} (|μ|={abs(mu):.4f})")
+
+        Hk, ok, iters = qr_iteration_with_fixed_shift(
+            H, mu, max_iter=max_iter, tol=1e-10, debug=debug
+        )
+
+        print(f"│  iterations    = {iters}/{max_iter}")
+        print("│  sub‑diag magnitudes after last step:")
+        print("│ ", pretty(np.abs(np.diag(Hk, k=-1))))
+        print(f"└─ converged?    = {'yes' if ok else 'no'}")
 
 
-run_qr_iteration_with_shifts()
 
+run_qr_iteration_with_shifts_and_debug(n=4, n_matrices=30, max_iter=100, debug=True)
 ```
 
-We once more ran this on $30$ random matrices, with $100$ iterations and using a generous `tolarance = 1e-5` for convergence. The output is:
+An expected output is:
 
 ```
---- Orthogonal Matrix Q number 1 ---
-Fixed shift used (eigenvalue of the final block): 0.45675480266096846 (modulus 0.4568)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.006  1.     0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 01/30  (size 4x4)
+│  fixed shift μ = -0.936534 (|μ|=0.9365)
+  before: subdiag=[ 0.959+0.j -0.993+0.j -0.393+0.j],  ‖·‖₂=1.436e+00
+  iter 00: subdiag=[0.731+0.j 0.334+0.j 0.235+0.j],  ‖·‖₂=8.375e-01
+  iter 01: subdiag=[ 0.723+0.j -0.045+0.j -0.231+0.j],  ‖·‖₂=7.601e-01
+  iter 02: subdiag=[0.723+0.j 0.006+0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 03: subdiag=[ 0.723+0.j -0.001+0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 04: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 05: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 06: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 07: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 08: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 09: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 10: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 11: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 12: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 13: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 14: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 15: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 16: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 17: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 18: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 19: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 20: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 21: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 22: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 23: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 24: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 25: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 26: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 27: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 28: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 29: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 30: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 31: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 32: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 33: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 34: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 35: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 36: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 37: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 38: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 39: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 40: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 41: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 42: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 43: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 44: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 45: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 46: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 47: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 48: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 49: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 50: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 51: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 52: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 53: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 54: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 55: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 56: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 57: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 58: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 59: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 60: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 61: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 62: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 63: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 64: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 65: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 66: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 67: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 68: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 69: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 70: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 71: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 72: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 73: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 74: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 75: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 76: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 77: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 78: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 79: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 80: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 81: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 82: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 83: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 84: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 85: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 86: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 87: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 88: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 89: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 90: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 91: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 92: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 93: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 94: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 95: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 96: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 97: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 98: subdiag=[0.723+0.j 0.   +0.j 0.231+0.j],  ‖·‖₂=7.586e-01
+  iter 99: subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+  after : subdiag=[ 0.723+0.j -0.   +0.j -0.231+0.j],  ‖·‖₂=7.586e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.723 0.    0.231]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 2 ---
-Fixed shift used (eigenvalue of the final block): 0.47119769752489193 (modulus 0.4712)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.443  0.501 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 02/30  (size 4x4)
+│  fixed shift μ = 0.985706 (|μ|=0.9857)
+  before: subdiag=[ 0.942+0.j -0.63 +0.j -0.464+0.j],  ‖·‖₂=1.224e+00
+  iter 00: subdiag=[ 0.982+0.j -0.877+0.j -0.004+0.j],  ‖·‖₂=1.316e+00
+  iter 01: subdiag=[ 0.993+0.j -0.997+0.j -0.   +0.j],  ‖·‖₂=1.407e+00
+  iter 02: subdiag=[ 0.85 +0.j -0.977+0.j -0.   +0.j],  ‖·‖₂=1.295e+00
+  iter 03: subdiag=[ 0.581+0.j -0.942+0.j -0.   +0.j],  ‖·‖₂=1.107e+00
+  iter 04: subdiag=[ 0.346+0.j -0.925+0.j -0.   +0.j],  ‖·‖₂=9.879e-01
+  iter 05: subdiag=[ 0.195+0.j -0.92 +0.j -0.   +0.j],  ‖·‖₂=9.402e-01
+  iter 06: subdiag=[ 0.108+0.j -0.918+0.j -0.   +0.j],  ‖·‖₂=9.244e-01
+  iter 07: subdiag=[ 0.059+0.j -0.918+0.j -0.   +0.j],  ‖·‖₂=9.194e-01
+  iter 08: subdiag=[ 0.033+0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.179e-01
+  iter 09: subdiag=[ 0.018+0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.175e-01
+  iter 10: subdiag=[ 0.01 +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 11: subdiag=[ 0.005+0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 12: subdiag=[ 0.003+0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 13: subdiag=[ 0.002+0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 14: subdiag=[ 0.001+0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 15: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 16: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 17: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 18: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 19: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 20: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 21: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 22: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 23: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 24: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 25: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 26: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 27: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 28: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 29: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 30: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 31: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 32: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 33: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 34: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 35: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 36: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 37: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 38: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 39: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 40: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 41: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 42: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 43: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 44: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 45: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 46: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 47: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 48: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 49: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 50: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 51: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 52: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 53: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 54: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 55: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 56: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 57: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 58: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 59: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 60: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 61: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 62: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 63: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 64: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 65: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 66: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 67: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 68: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 69: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 70: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 71: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 72: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 73: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 74: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 75: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 76: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 77: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 78: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 79: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 80: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 81: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 82: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 83: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 84: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 85: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 86: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 87: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 88: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 89: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 90: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 91: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 92: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 93: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 94: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 95: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 96: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 97: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 98: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  iter 99: subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+  after : subdiag=[ 0.   +0.j -0.917+0.j -0.   +0.j],  ‖·‖₂=9.173e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.    0.917 0.   ]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 3 ---
-Fixed shift used (eigenvalue of the final block): 0.6543379277197392 (modulus 0.6543)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.004 -1.     0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 03/30  (size 4x4)
+│  fixed shift μ = 0.999872 (|μ|=0.9999)
+  before: subdiag=[ 0.889+0.j -0.786+0.j  0.008+0.j],  ‖·‖₂=1.186e+00
+  iter 00: subdiag=[ 0.692+0.j -0.475+0.j  0.   +0.j],  ‖·‖₂=8.397e-01
+  iter 01: subdiag=[ 0.182+0.j -0.444+0.j  0.   +0.j],  ‖·‖₂=4.803e-01
+  iter 02: subdiag=[ 0.042+0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.448e-01
+  iter 03: subdiag=[ 0.009+0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.428e-01
+  iter 04: subdiag=[ 0.002+0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 05: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 06: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 07: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 08: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 09: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 10: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 11: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 12: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 13: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 14: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 15: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 16: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 17: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 18: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 19: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 20: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 21: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 22: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 23: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 24: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 25: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 26: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 27: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 28: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 29: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 30: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 31: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 32: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 33: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 34: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 35: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 36: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 37: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 38: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 39: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 40: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 41: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 42: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 43: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 44: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 45: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 46: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 47: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 48: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 49: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 50: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 51: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 52: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 53: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 54: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 55: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 56: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 57: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 58: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 59: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 60: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 61: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 62: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 63: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 64: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 65: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 66: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 67: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 68: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 69: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 70: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 71: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 72: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 73: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 74: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 75: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 76: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 77: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 78: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 79: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 80: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 81: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 82: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 83: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 84: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 85: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 86: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 87: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 88: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 89: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 90: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 91: subdiag=[0.   +0.j 0.443+0.j 0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 92: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 93: subdiag=[0.   +0.j 0.443+0.j 0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 94: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 95: subdiag=[0.   +0.j 0.443+0.j 0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 96: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 97: subdiag=[0.   +0.j 0.443+0.j 0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 98: subdiag=[ 0.   +0.j -0.443+0.j  0.   +0.j],  ‖·‖₂=4.427e-01
+  iter 99: subdiag=[0.   +0.j 0.443+0.j 0.   +0.j],  ‖·‖₂=4.427e-01
+  after : subdiag=[0.   +0.j 0.443+0.j 0.   +0.j],  ‖·‖₂=4.427e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.    0.443 0.   ]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 4 ---
-Fixed shift used (eigenvalue of the final block): 0.47308128373683983 (modulus 0.4731)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[ 0.47  -0.739  0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 04/30  (size 4x4)
+│  fixed shift μ = -0.623567 (|μ|=0.6236)
+  before: subdiag=[-0.823+0.j  0.998+0.j -0.726+0.j],  ‖·‖₂=1.483e+00
+  iter 00: subdiag=[-1.   +0.j -0.866+0.j  0.426+0.j],  ‖·‖₂=1.390e+00
+  iter 01: subdiag=[-0.973+0.j  0.433+0.j -0.346+0.j],  ‖·‖₂=1.120e+00
+  iter 02: subdiag=[-0.964+0.j -0.161+0.j  0.334+0.j],  ‖·‖₂=1.033e+00
+  iter 03: subdiag=[-0.963+0.j  0.057+0.j -0.333+0.j],  ‖·‖₂=1.020e+00
+  iter 04: subdiag=[-0.962+0.j -0.02 +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 05: subdiag=[-0.962+0.j  0.007+0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 06: subdiag=[-0.962+0.j -0.002+0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 07: subdiag=[-0.962+0.j  0.001+0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 08: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 09: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 10: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 11: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 12: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 13: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 14: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 15: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 16: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 17: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 18: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 19: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 20: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 21: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 22: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 23: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 24: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 25: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 26: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 27: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 28: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 29: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 30: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 31: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 32: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 33: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 34: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 35: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 36: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 37: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 38: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 39: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 40: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 41: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 42: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 43: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 44: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 45: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 46: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 47: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 48: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 49: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 50: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 51: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 52: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 53: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 54: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 55: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 56: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 57: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 58: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 59: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 60: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 61: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 62: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 63: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 64: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 65: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 66: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 67: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 68: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 69: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 70: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 71: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 72: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 73: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 74: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 75: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 76: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 77: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 78: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 79: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 80: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 81: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 82: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 83: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 84: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 85: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 86: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 87: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 88: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 89: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 90: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 91: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 92: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 93: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 94: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 95: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 96: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 97: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 98: subdiag=[-0.962+0.j -0.   +0.j  0.332+0.j],  ‖·‖₂=1.018e+00
+  iter 99: subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+  after : subdiag=[-0.962+0.j  0.   +0.j -0.332+0.j],  ‖·‖₂=1.018e+00
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.962 0.    0.332]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 5 ---
-Fixed shift used (eigenvalue of the final block): 0.999835862374747 (modulus 0.9998)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[ 0.079 -0.95  -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 05/30  (size 4x4)
+│  fixed shift μ = -0.649367-0.477769j (|μ|=0.8062)
+  before: subdiag=[-0.78 +0.j -0.76 +0.j  0.617+0.j],  ‖·‖₂=1.252e+00
+  iter 00: subdiag=[-0.705-0.j  0.441-0.j  0.209+0.j],  ‖·‖₂=8.579e-01
+  iter 01: subdiag=[-0.627+0.j -0.316+0.j  0.04 +0.j],  ‖·‖₂=7.032e-01
+  iter 02: subdiag=[-0.53 +0.j  0.232-0.j  0.008+0.j],  ‖·‖₂=5.789e-01
+  iter 03: subdiag=[-0.432+0.j -0.173+0.j  0.001+0.j],  ‖·‖₂=4.649e-01
+  iter 04: subdiag=[-0.342+0.j  0.13 -0.j  0.   +0.j],  ‖·‖₂=3.660e-01
+  iter 05: subdiag=[-0.267+0.j -0.098+0.j  0.   +0.j],  ‖·‖₂=2.844e-01
+  iter 06: subdiag=[-0.206+0.j  0.075-0.j  0.   -0.j],  ‖·‖₂=2.191e-01
+  iter 07: subdiag=[-0.158+0.j -0.057+0.j  0.   +0.j],  ‖·‖₂=1.679e-01
+  iter 08: subdiag=[-0.121+0.j  0.044-0.j  0.   -0.j],  ‖·‖₂=1.283e-01
+  iter 09: subdiag=[-0.092+0.j -0.033+0.j  0.   -0.j],  ‖·‖₂=9.788e-02
+  iter 10: subdiag=[-0.07 +0.j  0.026-0.j  0.   -0.j],  ‖·‖₂=7.459e-02
+  iter 11: subdiag=[-0.053+0.j -0.02 +0.j  0.   -0.j],  ‖·‖₂=5.681e-02
+  iter 12: subdiag=[-0.041+0.j  0.015-0.j  0.   -0.j],  ‖·‖₂=4.325e-02
+  iter 13: subdiag=[-0.031+0.j -0.012+0.j  0.   -0.j],  ‖·‖₂=3.292e-02
+  iter 14: subdiag=[-0.023+0.j  0.009-0.j  0.   -0.j],  ‖·‖₂=2.506e-02
+  iter 15: subdiag=[-0.018+0.j -0.007+0.j  0.   -0.j],  ‖·‖₂=1.907e-02
+  iter 16: subdiag=[-0.014+0.j  0.005-0.j  0.   -0.j],  ‖·‖₂=1.451e-02
+  iter 17: subdiag=[-0.01 +0.j -0.004+0.j  0.   -0.j],  ‖·‖₂=1.105e-02
+  iter 18: subdiag=[-0.008+0.j  0.003-0.j  0.   -0.j],  ‖·‖₂=8.407e-03
+  iter 19: subdiag=[-0.006+0.j -0.002+0.j  0.   -0.j],  ‖·‖₂=6.398e-03
+  iter 20: subdiag=[-0.005+0.j  0.002-0.j  0.   -0.j],  ‖·‖₂=4.870e-03
+  iter 21: subdiag=[-0.003+0.j -0.001+0.j  0.   -0.j],  ‖·‖₂=3.706e-03
+  iter 22: subdiag=[-0.003+0.j  0.001-0.j  0.   -0.j],  ‖·‖₂=2.821e-03
+  iter 23: subdiag=[-0.002+0.j -0.001+0.j  0.   -0.j],  ‖·‖₂=2.147e-03
+  iter 24: subdiag=[-0.002+0.j  0.001-0.j  0.   -0.j],  ‖·‖₂=1.634e-03
+  iter 25: subdiag=[-0.001+0.j -0.   +0.j  0.   -0.j],  ‖·‖₂=1.244e-03
+  iter 26: subdiag=[-0.001+0.j  0.   -0.j  0.   -0.j],  ‖·‖₂=9.466e-04
+  iter 27: subdiag=[-0.001+0.j -0.   +0.j  0.   -0.j],  ‖·‖₂=7.205e-04
+  iter 28: subdiag=[-0.001+0.j  0.   -0.j  0.   -0.j],  ‖·‖₂=5.484e-04
+  iter 29: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=4.174e-04
+  iter 30: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=3.177e-04
+  iter 31: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=2.419e-04
+  iter 32: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.841e-04
+  iter 33: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.401e-04
+  iter 34: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.067e-04
+  iter 35: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=8.120e-05
+  iter 36: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=6.182e-05
+  iter 37: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=4.706e-05
+  iter 38: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=3.582e-05
+  iter 39: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=2.727e-05
+  iter 40: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=2.076e-05
+  iter 41: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.581e-05
+  iter 42: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.203e-05
+  iter 43: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=9.162e-06
+  iter 44: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=6.975e-06
+  iter 45: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=5.311e-06
+  iter 46: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=4.044e-06
+  iter 47: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=3.079e-06
+  iter 48: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=2.344e-06
+  iter 49: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.785e-06
+  iter 50: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.359e-06
+  iter 51: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.035e-06
+  iter 52: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=7.880e-07
+  iter 53: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=6.000e-07
+  iter 54: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=4.569e-07
+  iter 55: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=3.479e-07
+  iter 56: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=2.650e-07
+  iter 57: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=2.018e-07
+  iter 58: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.537e-07
+  iter 59: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.170e-07
+  iter 60: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=8.913e-08
+  iter 61: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=6.788e-08
+  iter 62: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=5.170e-08
+  iter 63: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=3.937e-08
+  iter 64: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=2.999e-08
+  iter 65: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=2.284e-08
+  iter 66: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.740e-08
+  iter 67: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.325e-08
+  iter 68: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.009e-08
+  iter 69: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=7.688e-09
+  iter 70: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=5.857e-09
+  iter 71: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=4.461e-09
+  iter 72: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=3.398e-09
+  iter 73: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=2.589e-09
+  iter 74: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.972e-09
+  iter 75: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.503e-09
+  iter 76: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.145e-09
+  iter 77: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=8.721e-10
+  iter 78: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=6.644e-10
+  iter 79: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=5.062e-10
+  iter 80: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=3.857e-10
+  iter 81: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=2.939e-10
+  iter 82: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=2.239e-10
+  iter 83: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.706e-10
+  iter 84: subdiag=[-0.+0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.300e-10
+  iter 85: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=9.907e-11
+  after : subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=9.907e-11
+│  iterations    = 86/100
+│  sub‑diag magnitudes after last step:
+│  [0. 0. 0.]
+└─ converged?    = yes
 
---- Orthogonal Matrix Q number 6 ---
-Fixed shift used (eigenvalue of the final block): 0.8163222681328892 (modulus 0.8163)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.597 -0.815 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 06/30  (size 4x4)
+│  fixed shift μ = -0.771151 (|μ|=0.7712)
+  before: subdiag=[-0.695+0.j  0.921+0.j  0.395+0.j],  ‖·‖₂=1.220e+00
+  iter 00: subdiag=[-0.414+0.j  0.919+0.j  0.099+0.j],  ‖·‖₂=1.012e+00
+  iter 01: subdiag=[-0.236+0.j  0.912+0.j  0.023+0.j],  ‖·‖₂=9.419e-01
+  iter 02: subdiag=[-0.131+0.j  0.909+0.j  0.005+0.j],  ‖·‖₂=9.186e-01
+  iter 03: subdiag=[-0.072+0.j  0.908+0.j  0.001+0.j],  ‖·‖₂=9.112e-01
+  iter 04: subdiag=[-0.04 +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.090e-01
+  iter 05: subdiag=[-0.022+0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.083e-01
+  iter 06: subdiag=[-0.012+0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.081e-01
+  iter 07: subdiag=[-0.007+0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 08: subdiag=[-0.004+0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 09: subdiag=[-0.002+0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 10: subdiag=[-0.001+0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 11: subdiag=[-0.001+0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 12: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 13: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 14: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 15: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 16: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 17: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 18: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 19: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 20: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 21: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 22: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 23: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 24: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 25: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 26: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 27: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 28: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 29: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 30: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 31: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 32: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 33: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 34: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 35: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 36: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 37: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 38: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 39: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 40: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 41: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 42: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 43: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 44: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 45: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 46: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 47: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 48: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 49: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 50: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 51: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 52: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 53: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 54: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 55: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 56: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 57: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 58: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 59: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 60: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 61: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 62: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 63: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 64: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 65: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 66: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 67: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 68: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 69: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 70: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 71: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 72: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 73: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 74: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 75: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 76: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 77: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 78: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 79: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 80: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 81: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 82: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 83: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 84: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 85: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 86: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 87: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 88: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 89: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 90: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 91: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 92: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 93: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 94: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 95: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 96: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 97: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 98: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  iter 99: subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+  after : subdiag=[-0.   +0.j  0.908+0.j  0.   +0.j],  ‖·‖₂=9.080e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.    0.908 0.   ]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 7 ---
-Fixed shift used (eigenvalue of the final block): 0.8964184377049635 (modulus 0.8964)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.37  -0.249 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 07/30  (size 4x4)
+│  fixed shift μ = -0.884666 (|μ|=0.8847)
+  before: subdiag=[ 1.   +0.j -0.815+0.j  0.838+0.j],  ‖·‖₂=1.538e+00
+  iter 00: subdiag=[ 0.626+0.j  0.831+0.j -0.362+0.j],  ‖·‖₂=1.102e+00
+  iter 01: subdiag=[ 0.56 +0.j -0.193+0.j  0.317+0.j],  ‖·‖₂=6.720e-01
+  iter 02: subdiag=[ 0.558+0.j  0.035+0.j -0.316+0.j],  ‖·‖₂=6.419e-01
+  iter 03: subdiag=[ 0.558+0.j -0.006+0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 04: subdiag=[ 0.558+0.j  0.001+0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 05: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 06: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 07: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 08: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 09: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 10: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 11: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 12: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 13: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 14: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 15: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 16: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 17: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 18: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 19: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 20: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 21: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 22: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 23: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 24: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 25: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 26: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 27: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 28: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 29: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 30: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 31: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 32: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 33: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 34: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 35: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 36: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 37: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 38: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 39: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 40: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 41: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 42: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 43: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 44: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 45: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 46: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 47: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 48: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 49: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 50: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 51: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 52: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 53: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 54: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 55: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 56: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 57: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 58: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 59: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 60: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 61: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 62: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 63: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 64: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 65: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 66: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 67: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 68: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 69: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 70: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 71: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 72: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 73: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 74: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 75: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 76: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 77: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 78: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 79: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 80: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 81: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 82: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 83: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 84: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 85: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 86: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 87: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 88: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 89: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 90: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 91: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 92: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 93: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 94: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 95: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 96: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 97: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 98: subdiag=[ 0.558+0.j  0.   +0.j -0.316+0.j],  ‖·‖₂=6.409e-01
+  iter 99: subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+  after : subdiag=[ 0.558+0.j -0.   +0.j  0.316+0.j],  ‖·‖₂=6.409e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.558 0.    0.316]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 8 ---
-Fixed shift used (eigenvalue of the final block): 0.9689586976565394 (modulus 0.9690)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.204 -0.864  0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 08/30  (size 4x4)
+│  fixed shift μ = -0.662036-0.664809j (|μ|=0.9382)
+  before: subdiag=[ 0.992+0.j -0.474+0.j  0.71 +0.j],  ‖·‖₂=1.309e+00
+  iter 00: subdiag=[0.782+0.j 0.413-0.j 0.08 -0.j],  ‖·‖₂=8.875e-01
+  iter 01: subdiag=[ 0.462-0.j  0.541-0.j -0.005+0.j],  ‖·‖₂=7.119e-01
+  iter 02: subdiag=[0.25 +0.j 0.713-0.j 0.   -0.j],  ‖·‖₂=7.559e-01
+  iter 03: subdiag=[ 0.136+0.j  0.876-0.j -0.   +0.j],  ‖·‖₂=8.861e-01
+  iter 04: subdiag=[0.078-0.j 0.95 -0.j 0.   -0.j],  ‖·‖₂=9.531e-01
+  iter 05: subdiag=[ 0.048+0.j  0.89 -0.j -0.   +0.j],  ‖·‖₂=8.914e-01
+  iter 06: subdiag=[0.032+0.j 0.732-0.j 0.   -0.j],  ‖·‖₂=7.331e-01
+  iter 07: subdiag=[ 0.022+0.j  0.551-0.j -0.   +0.j],  ‖·‖₂=5.514e-01
+  iter 08: subdiag=[0.015+0.j 0.393-0.j 0.   -0.j],  ‖·‖₂=3.938e-01
+  iter 09: subdiag=[-0.011-0.j -0.274+0.j -0.   +0.j],  ‖·‖₂=2.738e-01
+  iter 10: subdiag=[0.008+0.j 0.188-0.j 0.   -0.j],  ‖·‖₂=1.880e-01
+  iter 11: subdiag=[-0.006-0.j -0.128+0.j -0.   +0.j],  ‖·‖₂=1.282e-01
+  iter 12: subdiag=[0.004+0.j 0.087-0.j 0.   -0.j],  ‖·‖₂=8.725e-02
+  iter 13: subdiag=[-0.003-0.j -0.059+0.j -0.   +0.j],  ‖·‖₂=5.928e-02
+  iter 14: subdiag=[0.002+0.j 0.04 -0.j 0.   -0.j],  ‖·‖₂=4.025e-02
+  iter 15: subdiag=[-0.002-0.j -0.027+0.j -0.   +0.j],  ‖·‖₂=2.732e-02
+  iter 16: subdiag=[0.001+0.j 0.019-0.j 0.   -0.j],  ‖·‖₂=1.855e-02
+  iter 17: subdiag=[-0.001-0.j -0.013+0.j -0.   +0.j],  ‖·‖₂=1.259e-02
+  iter 18: subdiag=[0.001+0.j 0.009-0.j 0.   -0.j],  ‖·‖₂=8.545e-03
+  iter 19: subdiag=[-0.   -0.j -0.006+0.j -0.   +0.j],  ‖·‖₂=5.800e-03
+  iter 20: subdiag=[0.   +0.j 0.004-0.j 0.   -0.j],  ‖·‖₂=3.937e-03
+  iter 21: subdiag=[-0.   -0.j -0.003+0.j -0.   +0.j],  ‖·‖₂=2.673e-03
+  iter 22: subdiag=[0.   +0.j 0.002-0.j 0.   -0.j],  ‖·‖₂=1.814e-03
+  iter 23: subdiag=[-0.   -0.j -0.001+0.j -0.   +0.j],  ‖·‖₂=1.232e-03
+  iter 24: subdiag=[0.   +0.j 0.001-0.j 0.   -0.j],  ‖·‖₂=8.364e-04
+  iter 25: subdiag=[-0.   -0.j -0.001+0.j -0.   +0.j],  ‖·‖₂=5.679e-04
+  iter 26: subdiag=[0.+0.j 0.-0.j 0.+0.j],  ‖·‖₂=3.857e-04
+  iter 27: subdiag=[-0.-0.j -0.+0.j -0.+0.j],  ‖·‖₂=2.619e-04
+  iter 28: subdiag=[0.+0.j 0.-0.j 0.+0.j],  ‖·‖₂=1.779e-04
+  iter 29: subdiag=[-0.-0.j -0.+0.j -0.-0.j],  ‖·‖₂=1.209e-04
+  iter 30: subdiag=[0.+0.j 0.-0.j 0.+0.j],  ‖·‖₂=8.213e-05
+  iter 31: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=5.581e-05
+  iter 32: subdiag=[0.+0.j 0.-0.j 0.+0.j],  ‖·‖₂=3.794e-05
+  iter 33: subdiag=[-0.-0.j -0.+0.j -0.-0.j],  ‖·‖₂=2.579e-05
+  iter 34: subdiag=[0.+0.j 0.+0.j 0.+0.j],  ‖·‖₂=1.754e-05
+  iter 35: subdiag=[-0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=1.193e-05
+  iter 36: subdiag=[0.+0.j 0.+0.j 0.-0.j],  ‖·‖₂=8.118e-06
+  iter 37: subdiag=[-0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=5.526e-06
+  iter 38: subdiag=[0.+0.j 0.+0.j 0.-0.j],  ‖·‖₂=3.763e-06
+  iter 39: subdiag=[-0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=2.564e-06
+  iter 40: subdiag=[0.+0.j 0.+0.j 0.+0.j],  ‖·‖₂=1.748e-06
+  iter 41: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=1.192e-06
+  iter 42: subdiag=[0.+0.j 0.+0.j 0.+0.j],  ‖·‖₂=8.135e-07
+  iter 43: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=5.556e-07
+  iter 44: subdiag=[0.+0.j 0.+0.j 0.+0.j],  ‖·‖₂=3.797e-07
+  iter 45: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=2.598e-07
+  iter 46: subdiag=[0.+0.j 0.+0.j 0.+0.j],  ‖·‖₂=1.779e-07
+  iter 47: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=1.219e-07
+  iter 48: subdiag=[0.+0.j 0.+0.j 0.+0.j],  ‖·‖₂=8.368e-08
+  iter 49: subdiag=[-0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=5.750e-08
+  iter 50: subdiag=[0.+0.j 0.+0.j 0.-0.j],  ‖·‖₂=3.956e-08
+  iter 51: subdiag=[-0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=2.726e-08
+  iter 52: subdiag=[0.+0.j 0.+0.j 0.-0.j],  ‖·‖₂=1.881e-08
+  iter 53: subdiag=[-0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=1.300e-08
+  iter 54: subdiag=[0.+0.j 0.+0.j 0.+0.j],  ‖·‖₂=9.004e-09
+  iter 55: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=6.246e-09
+  iter 56: subdiag=[0.+0.j 0.+0.j 0.+0.j],  ‖·‖₂=4.341e-09
+  iter 57: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=3.023e-09
+  iter 58: subdiag=[0.+0.j 0.+0.j 0.+0.j],  ‖·‖₂=2.110e-09
+  iter 59: subdiag=[-0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=1.475e-09
+  iter 60: subdiag=[0.+0.j 0.+0.j 0.+0.j],  ‖·‖₂=1.034e-09
+  iter 61: subdiag=[-0.-0.j -0.+0.j -0.-0.j],  ‖·‖₂=7.257e-10
+  iter 62: subdiag=[0.+0.j 0.-0.j 0.+0.j],  ‖·‖₂=5.106e-10
+  iter 63: subdiag=[-0.-0.j -0.+0.j -0.-0.j],  ‖·‖₂=3.599e-10
+  iter 64: subdiag=[0.+0.j 0.-0.j 0.+0.j],  ‖·‖₂=2.542e-10
+  iter 65: subdiag=[-0.-0.j -0.+0.j -0.-0.j],  ‖·‖₂=1.799e-10
+  iter 66: subdiag=[0.+0.j 0.-0.j 0.+0.j],  ‖·‖₂=1.276e-10
+  iter 67: subdiag=[-0.-0.j -0.+0.j -0.+0.j],  ‖·‖₂=9.060e-11
+  after : subdiag=[-0.-0.j -0.+0.j -0.+0.j],  ‖·‖₂=9.060e-11
+│  iterations    = 68/100
+│  sub‑diag magnitudes after last step:
+│  [0. 0. 0.]
+└─ converged?    = yes
 
---- Orthogonal Matrix Q number 9 ---
-Fixed shift used (eigenvalue of the final block): 0.8100766994771901 (modulus 0.8101)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[0.332 0.362 0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 09/30  (size 4x4)
+│  fixed shift μ = 0.995354 (|μ|=0.9954)
+  before: subdiag=[ 0.805+0.j  0.682+0.j -0.243+0.j],  ‖·‖₂=1.083e+00
+  iter 00: subdiag=[ 0.618+0.j -0.241+0.j  0.043+0.j],  ‖·‖₂=6.650e-01
+  iter 01: subdiag=[ 0.614+0.j  0.006+0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 02: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 03: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 04: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 05: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 06: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 07: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 08: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 09: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 10: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 11: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 12: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 13: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 14: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 15: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 16: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 17: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 18: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 19: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 20: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 21: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 22: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 23: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 24: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 25: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 26: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 27: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 28: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 29: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 30: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 31: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 32: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 33: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 34: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 35: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 36: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 37: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 38: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 39: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 40: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 41: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 42: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 43: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 44: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 45: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 46: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 47: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 48: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 49: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 50: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 51: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 52: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 53: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 54: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 55: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 56: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 57: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 58: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 59: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 60: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 61: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 62: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 63: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 64: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 65: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 66: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 67: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 68: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 69: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 70: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 71: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 72: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 73: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 74: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 75: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 76: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 77: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 78: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 79: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 80: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 81: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 82: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 83: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 84: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 85: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 86: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 87: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 88: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 89: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 90: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 91: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 92: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 93: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 94: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 95: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 96: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 97: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 98: subdiag=[ 0.614+0.j -0.   +0.j  0.043+0.j],  ‖·‖₂=6.158e-01
+  iter 99: subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+  after : subdiag=[ 0.614+0.j  0.   +0.j -0.043+0.j],  ‖·‖₂=6.158e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.614 0.    0.043]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 10 ---
-Fixed shift used (eigenvalue of the final block): (-0.37373545734503094+0.5961171763741568j) (modulus 0.7036)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.817-0.j  0.   -0.j -0.   -0.j]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 10/30  (size 4x4)
+│  fixed shift μ = -0.926518 (|μ|=0.9265)
+  before: subdiag=[ 0.914+0.j  0.658+0.j -0.888+0.j],  ‖·‖₂=1.434e+00
+  iter 00: subdiag=[ 0.572+0.j -0.901+0.j  0.244+0.j],  ‖·‖₂=1.095e+00
+  iter 01: subdiag=[ 0.491+0.j  0.144+0.j -0.205+0.j],  ‖·‖₂=5.513e-01
+  iter 02: subdiag=[ 0.49 +0.j -0.016+0.j  0.204+0.j],  ‖·‖₂=5.311e-01
+  iter 03: subdiag=[ 0.49 +0.j  0.002+0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 04: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 05: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 06: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 07: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 08: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 09: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 10: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 11: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 12: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 13: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 14: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 15: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 16: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 17: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 18: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 19: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 20: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 21: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 22: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 23: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 24: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 25: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 26: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 27: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 28: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 29: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 30: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 31: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 32: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 33: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 34: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 35: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 36: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 37: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 38: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 39: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 40: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 41: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 42: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 43: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 44: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 45: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 46: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 47: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 48: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 49: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 50: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 51: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 52: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 53: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 54: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 55: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 56: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 57: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 58: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 59: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 60: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 61: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 62: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 63: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 64: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 65: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 66: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 67: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 68: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 69: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 70: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 71: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 72: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 73: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 74: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 75: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 76: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 77: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 78: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 79: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 80: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 81: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 82: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 83: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 84: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 85: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 86: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 87: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 88: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 89: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 90: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 91: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 92: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 93: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 94: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 95: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 96: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 97: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 98: subdiag=[ 0.49 +0.j -0.   +0.j  0.204+0.j],  ‖·‖₂=5.308e-01
+  iter 99: subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+  after : subdiag=[ 0.49 +0.j  0.   +0.j -0.204+0.j],  ‖·‖₂=5.308e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.49  0.    0.204]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 11 ---
-Fixed shift used (eigenvalue of the final block): 0.9508997822578601 (modulus 0.9509)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.    -0.985 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 11/30  (size 4x4)
+│  fixed shift μ = -0.553226-0.269054j (|μ|=0.6152)
+  before: subdiag=[-0.998+0.j  0.926+0.j  0.596+0.j],  ‖·‖₂=1.486e+00
+  iter 00: subdiag=[-0.938+0.j -0.68 +0.j  0.382+0.j],  ‖·‖₂=1.219e+00
+  iter 01: subdiag=[-0.81 +0.j  0.462-0.j  0.206-0.j],  ‖·‖₂=9.552e-01
+  iter 02: subdiag=[-0.661+0.j -0.318+0.j  0.103+0.j],  ‖·‖₂=7.404e-01
+  iter 03: subdiag=[-0.517-0.j  0.221-0.j  0.051+0.j],  ‖·‖₂=5.644e-01
+  iter 04: subdiag=[-0.394-0.j -0.156+0.j  0.025+0.j],  ‖·‖₂=4.240e-01
+  iter 05: subdiag=[-0.295-0.j  0.11 -0.j  0.012+0.j],  ‖·‖₂=3.154e-01
+  iter 06: subdiag=[-0.22 -0.j -0.078+0.j  0.006-0.j],  ‖·‖₂=2.332e-01
+  iter 07: subdiag=[-0.163+0.j  0.055-0.j  0.003+0.j],  ‖·‖₂=1.718e-01
+  iter 08: subdiag=[-0.12 -0.j -0.039+0.j  0.001+0.j],  ‖·‖₂=1.263e-01
+  iter 09: subdiag=[-0.089-0.j  0.028-0.j  0.001-0.j],  ‖·‖₂=9.283e-02
+  iter 10: subdiag=[-0.065-0.j -0.02 +0.j  0.   -0.j],  ‖·‖₂=6.818e-02
+  iter 11: subdiag=[-0.048+0.j  0.014-0.j  0.   -0.j],  ‖·‖₂=5.006e-02
+  iter 12: subdiag=[-0.035+0.j -0.01 +0.j  0.   -0.j],  ‖·‖₂=3.676e-02
+  iter 13: subdiag=[-0.026+0.j  0.007-0.j  0.   +0.j],  ‖·‖₂=2.699e-02
+  iter 14: subdiag=[-0.019+0.j -0.005+0.j  0.   +0.j],  ‖·‖₂=1.982e-02
+  iter 15: subdiag=[-0.014+0.j  0.004-0.j  0.   +0.j],  ‖·‖₂=1.456e-02
+  iter 16: subdiag=[-0.01 +0.j -0.003+0.j  0.   +0.j],  ‖·‖₂=1.069e-02
+  iter 17: subdiag=[-0.008+0.j  0.002-0.j  0.   +0.j],  ‖·‖₂=7.855e-03
+  iter 18: subdiag=[-0.006+0.j -0.001+0.j  0.   -0.j],  ‖·‖₂=5.771e-03
+  iter 19: subdiag=[-0.004+0.j  0.001-0.j  0.   -0.j],  ‖·‖₂=4.240e-03
+  iter 20: subdiag=[-0.003-0.j -0.001-0.j  0.   -0.j],  ‖·‖₂=3.116e-03
+  iter 21: subdiag=[-0.002-0.j  0.   +0.j  0.   -0.j],  ‖·‖₂=2.290e-03
+  iter 22: subdiag=[-0.002-0.j -0.   -0.j  0.   +0.j],  ‖·‖₂=1.683e-03
+  iter 23: subdiag=[-0.001-0.j  0.   -0.j  0.   +0.j],  ‖·‖₂=1.237e-03
+  iter 24: subdiag=[-0.001-0.j -0.   +0.j  0.   -0.j],  ‖·‖₂=9.094e-04
+  iter 25: subdiag=[-0.001-0.j  0.   +0.j  0.   -0.j],  ‖·‖₂=6.685e-04
+  iter 26: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=4.915e-04
+  iter 27: subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=3.614e-04
+  iter 28: subdiag=[-0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=2.657e-04
+  iter 29: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=1.954e-04
+  iter 30: subdiag=[-0.+0.j -0.+0.j  0.+0.j],  ‖·‖₂=1.437e-04
+  iter 31: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=1.057e-04
+  iter 32: subdiag=[-0.-0.j -0.+0.j  0.+0.j],  ‖·‖₂=7.772e-05
+  iter 33: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=5.716e-05
+  iter 34: subdiag=[-0.-0.j -0.+0.j  0.+0.j],  ‖·‖₂=4.204e-05
+  iter 35: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=3.093e-05
+  iter 36: subdiag=[-0.-0.j -0.+0.j  0.+0.j],  ‖·‖₂=2.275e-05
+  iter 37: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=1.673e-05
+  iter 38: subdiag=[-0.-0.j -0.+0.j  0.+0.j],  ‖·‖₂=1.231e-05
+  iter 39: subdiag=[-0.-0.j  0.+0.j  0.+0.j],  ‖·‖₂=9.056e-06
+  iter 40: subdiag=[-0.-0.j -0.-0.j  0.+0.j],  ‖·‖₂=6.662e-06
+  iter 41: subdiag=[-0.-0.j  0.+0.j  0.+0.j],  ‖·‖₂=4.902e-06
+  iter 42: subdiag=[-0.-0.j -0.+0.j  0.+0.j],  ‖·‖₂=3.606e-06
+  iter 43: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=2.653e-06
+  iter 44: subdiag=[-0.-0.j -0.+0.j  0.+0.j],  ‖·‖₂=1.952e-06
+  iter 45: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=1.436e-06
+  iter 46: subdiag=[-0.-0.j -0.+0.j  0.+0.j],  ‖·‖₂=1.057e-06
+  iter 47: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=7.776e-07
+  iter 48: subdiag=[-0.-0.j -0.+0.j  0.+0.j],  ‖·‖₂=5.722e-07
+  iter 49: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=4.210e-07
+  iter 50: subdiag=[-0.-0.j -0.+0.j  0.+0.j],  ‖·‖₂=3.098e-07
+  iter 51: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=2.280e-07
+  iter 52: subdiag=[-0.-0.j -0.+0.j  0.+0.j],  ‖·‖₂=1.677e-07
+  iter 53: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=1.234e-07
+  iter 54: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=9.083e-08
+  iter 55: subdiag=[-0.-0.j  0.-0.j  0.+0.j],  ‖·‖₂=6.684e-08
+  iter 56: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=4.919e-08
+  iter 57: subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=3.620e-08
+  iter 58: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=2.664e-08
+  iter 59: subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.960e-08
+  iter 60: subdiag=[-0.-0.j -0.-0.j  0.-0.j],  ‖·‖₂=1.443e-08
+  iter 61: subdiag=[-0.-0.j  0.+0.j  0.-0.j],  ‖·‖₂=1.062e-08
+  iter 62: subdiag=[-0.-0.j -0.-0.j  0.-0.j],  ‖·‖₂=7.812e-09
+  iter 63: subdiag=[-0.-0.j  0.+0.j  0.-0.j],  ‖·‖₂=5.749e-09
+  iter 64: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=4.231e-09
+  iter 65: subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=3.114e-09
+  iter 66: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=2.292e-09
+  iter 67: subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.686e-09
+  iter 68: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.241e-09
+  iter 69: subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=9.134e-10
+  iter 70: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=6.722e-10
+  iter 71: subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=4.947e-10
+  iter 72: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=3.641e-10
+  iter 73: subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=2.680e-10
+  iter 74: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.972e-10
+  iter 75: subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=1.451e-10
+  iter 76: subdiag=[-0.-0.j -0.+0.j  0.-0.j],  ‖·‖₂=1.068e-10
+  iter 77: subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=7.861e-11
+  after : subdiag=[-0.-0.j  0.-0.j  0.-0.j],  ‖·‖₂=7.861e-11
+│  iterations    = 78/100
+│  sub‑diag magnitudes after last step:
+│  [0. 0. 0.]
+└─ converged?    = yes
 
---- Orthogonal Matrix Q number 12 ---
-Fixed shift used (eigenvalue of the final block): 0.49537543518658966 (modulus 0.4954)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[ 0.096  0.822 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 12/30  (size 4x4)
+│  fixed shift μ = 0.918038 (|μ|=0.9180)
+  before: subdiag=[-0.634+0.j  0.891+0.j  0.631+0.j],  ‖·‖₂=1.263e+00
+  iter 00: subdiag=[-0.868+0.j -0.701+0.j -0.147+0.j],  ‖·‖₂=1.126e+00
+  iter 01: subdiag=[-0.823+0.j  0.075+0.j  0.133+0.j],  ‖·‖₂=8.371e-01
+  iter 02: subdiag=[-0.823+0.j -0.007+0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 03: subdiag=[-0.823+0.j  0.001+0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 04: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 05: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 06: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 07: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 08: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 09: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 10: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 11: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 12: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 13: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 14: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 15: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 16: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 17: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 18: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 19: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 20: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 21: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 22: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 23: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 24: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 25: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 26: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 27: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 28: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 29: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 30: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 31: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 32: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 33: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 34: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 35: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 36: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 37: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 38: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 39: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 40: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 41: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 42: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 43: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 44: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 45: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 46: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 47: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 48: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 49: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 50: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 51: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 52: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 53: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 54: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 55: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 56: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 57: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 58: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 59: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 60: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 61: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 62: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 63: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 64: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 65: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 66: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 67: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 68: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 69: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 70: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 71: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 72: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 73: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 74: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 75: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 76: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 77: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 78: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 79: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 80: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 81: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 82: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 83: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 84: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 85: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 86: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 87: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 88: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 89: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 90: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 91: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 92: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 93: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 94: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 95: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 96: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 97: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 98: subdiag=[-0.823+0.j -0.   +0.j -0.133+0.j],  ‖·‖₂=8.333e-01
+  iter 99: subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+  after : subdiag=[-0.823+0.j  0.   +0.j  0.133+0.j],  ‖·‖₂=8.333e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.823 0.    0.133]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 13 ---
-Fixed shift used (eigenvalue of the final block): -0.5169109822890083 (modulus 0.5169)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.    0.57  0.  ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 13/30  (size 4x4)
+│  fixed shift μ = -0.0259786-0.624268j (|μ|=0.6248)
+  before: subdiag=[ 0.996+0.j -0.921+0.j  0.999+0.j],  ‖·‖₂=1.685e+00
+  iter 00: subdiag=[ 0.78 +0.j -0.999+0.j  0.781+0.j],  ‖·‖₂=1.488e+00
+  iter 01: subdiag=[-0.6  +0.j -0.718+0.j -0.6  -0.j],  ‖·‖₂=1.111e+00
+  iter 02: subdiag=[0.56 +0.j 0.319-0.j 0.559+0.j],  ‖·‖₂=8.526e-01
+  iter 03: subdiag=[-0.553+0.j -0.124-0.j -0.551+0.j],  ‖·‖₂=7.910e-01
+  iter 04: subdiag=[0.552+0.j 0.047-0.j 0.549+0.j],  ‖·‖₂=7.802e-01
+  iter 05: subdiag=[-0.551-0.j  0.018-0.j -0.548+0.j],  ‖·‖₂=7.772e-01
+  iter 06: subdiag=[0.549+0.j 0.007-0.j 0.547+0.j],  ‖·‖₂=7.750e-01
+  iter 07: subdiag=[-0.548-0.j  0.003+0.j -0.545+0.j],  ‖·‖₂=7.726e-01
+  iter 08: subdiag=[0.546+0.j 0.001+0.j 0.543-0.j],  ‖·‖₂=7.698e-01
+  iter 09: subdiag=[-0.543-0.j  0.   +0.j -0.541+0.j],  ‖·‖₂=7.666e-01
+  iter 10: subdiag=[0.54 +0.j 0.   +0.j 0.539-0.j],  ‖·‖₂=7.631e-01
+  iter 11: subdiag=[-0.537-0.j  0.   +0.j -0.536+0.j],  ‖·‖₂=7.591e-01
+  iter 12: subdiag=[0.534-0.j 0.   +0.j 0.534+0.j],  ‖·‖₂=7.548e-01
+  iter 13: subdiag=[-0.53 +0.j  0.   +0.j -0.531-0.j],  ‖·‖₂=7.502e-01
+  iter 14: subdiag=[0.526-0.j 0.   +0.j 0.528+0.j],  ‖·‖₂=7.452e-01
+  iter 15: subdiag=[-0.521+0.j  0.   +0.j -0.525+0.j],  ‖·‖₂=7.399e-01
+  iter 16: subdiag=[0.517-0.j 0.   +0.j 0.522+0.j],  ‖·‖₂=7.343e-01
+  iter 17: subdiag=[-0.512-0.j  0.   +0.j -0.518-0.j],  ‖·‖₂=7.283e-01
+  iter 18: subdiag=[0.506+0.j 0.   +0.j 0.515+0.j],  ‖·‖₂=7.221e-01
+  iter 19: subdiag=[-0.501-0.j  0.   +0.j -0.511-0.j],  ‖·‖₂=7.157e-01
+  iter 20: subdiag=[0.495+0.j 0.   +0.j 0.507+0.j],  ‖·‖₂=7.089e-01
+  iter 21: subdiag=[-0.489-0.j  0.   +0.j -0.503+0.j],  ‖·‖₂=7.020e-01
+  iter 22: subdiag=[0.483+0.j 0.   +0.j 0.499-0.j],  ‖·‖₂=6.948e-01
+  iter 23: subdiag=[-0.477-0.j  0.   +0.j -0.495+0.j],  ‖·‖₂=6.874e-01
+  iter 24: subdiag=[0.47 +0.j 0.   +0.j 0.491-0.j],  ‖·‖₂=6.798e-01
+  iter 25: subdiag=[-0.464-0.j  0.   +0.j -0.486+0.j],  ‖·‖₂=6.720e-01
+  iter 26: subdiag=[0.457+0.j 0.   +0.j 0.482-0.j],  ‖·‖₂=6.641e-01
+  iter 27: subdiag=[-0.45 -0.j  0.   +0.j -0.477+0.j],  ‖·‖₂=6.560e-01
+  iter 28: subdiag=[0.443+0.j 0.   +0.j 0.472+0.j],  ‖·‖₂=6.478e-01
+  iter 29: subdiag=[-0.436-0.j  0.   +0.j -0.468+0.j],  ‖·‖₂=6.395e-01
+  iter 30: subdiag=[0.429+0.j 0.   +0.j 0.463+0.j],  ‖·‖₂=6.311e-01
+  iter 31: subdiag=[-0.422-0.j  0.   +0.j -0.458+0.j],  ‖·‖₂=6.226e-01
+  iter 32: subdiag=[0.415+0.j 0.   +0.j 0.453-0.j],  ‖·‖₂=6.140e-01
+  iter 33: subdiag=[-0.408-0.j  0.   +0.j -0.448+0.j],  ‖·‖₂=6.054e-01
+  iter 34: subdiag=[0.4  +0.j 0.   +0.j 0.443+0.j],  ‖·‖₂=5.967e-01
+  iter 35: subdiag=[-0.393-0.j  0.   +0.j -0.437+0.j],  ‖·‖₂=5.880e-01
+  iter 36: subdiag=[0.386+0.j 0.   +0.j 0.432-0.j],  ‖·‖₂=5.792e-01
+  iter 37: subdiag=[-0.378-0.j  0.   +0.j -0.427+0.j],  ‖·‖₂=5.704e-01
+  iter 38: subdiag=[0.371+0.j 0.   +0.j 0.422+0.j],  ‖·‖₂=5.616e-01
+  iter 39: subdiag=[-0.364-0.j  0.   +0.j -0.416+0.j],  ‖·‖₂=5.529e-01
+  iter 40: subdiag=[0.357+0.j 0.   +0.j 0.411+0.j],  ‖·‖₂=5.441e-01
+  iter 41: subdiag=[-0.349-0.j  0.   +0.j -0.406+0.j],  ‖·‖₂=5.354e-01
+  iter 42: subdiag=[0.342+0.j 0.   +0.j 0.4  -0.j],  ‖·‖₂=5.266e-01
+  iter 43: subdiag=[-0.335-0.j  0.   +0.j -0.395+0.j],  ‖·‖₂=5.180e-01
+  iter 44: subdiag=[0.328+0.j 0.   +0.j 0.389-0.j],  ‖·‖₂=5.093e-01
+  iter 45: subdiag=[-0.321-0.j  0.   +0.j -0.384+0.j],  ‖·‖₂=5.008e-01
+  iter 46: subdiag=[0.314+0.j 0.   +0.j 0.379-0.j],  ‖·‖₂=4.922e-01
+  iter 47: subdiag=[-0.308-0.j  0.   +0.j -0.373+0.j],  ‖·‖₂=4.838e-01
+  iter 48: subdiag=[0.301+0.j 0.   +0.j 0.368-0.j],  ‖·‖₂=4.754e-01
+  iter 49: subdiag=[-0.294-0.j  0.   +0.j -0.363+0.j],  ‖·‖₂=4.671e-01
+  iter 50: subdiag=[0.288+0.j 0.   +0.j 0.357-0.j],  ‖·‖₂=4.588e-01
+  iter 51: subdiag=[-0.281-0.j  0.   +0.j -0.352+0.j],  ‖·‖₂=4.507e-01
+  iter 52: subdiag=[0.275+0.j 0.   +0.j 0.347-0.j],  ‖·‖₂=4.426e-01
+  iter 53: subdiag=[-0.269-0.j  0.   +0.j -0.342+0.j],  ‖·‖₂=4.346e-01
+  iter 54: subdiag=[0.263+0.j 0.   +0.j 0.336+0.j],  ‖·‖₂=4.267e-01
+  iter 55: subdiag=[-0.257-0.j  0.   +0.j -0.331+0.j],  ‖·‖₂=4.189e-01
+  iter 56: subdiag=[0.251+0.j 0.   +0.j 0.326+0.j],  ‖·‖₂=4.112e-01
+  iter 57: subdiag=[-0.245-0.j  0.   +0.j -0.321-0.j],  ‖·‖₂=4.036e-01
+  iter 58: subdiag=[0.239+0.j 0.   +0.j 0.316+0.j],  ‖·‖₂=3.961e-01
+  iter 59: subdiag=[-0.233-0.j  0.   +0.j -0.311-0.j],  ‖·‖₂=3.887e-01
+  iter 60: subdiag=[0.228+0.j 0.   +0.j 0.306+0.j],  ‖·‖₂=3.814e-01
+  iter 61: subdiag=[-0.222-0.j  0.   +0.j -0.301-0.j],  ‖·‖₂=3.742e-01
+  iter 62: subdiag=[0.217+0.j 0.   +0.j 0.296+0.j],  ‖·‖₂=3.671e-01
+  iter 63: subdiag=[-0.212-0.j  0.   +0.j -0.291-0.j],  ‖·‖₂=3.601e-01
+  iter 64: subdiag=[0.207+0.j 0.   +0.j 0.286+0.j],  ‖·‖₂=3.532e-01
+  iter 65: subdiag=[-0.202-0.j  0.   +0.j -0.282-0.j],  ‖·‖₂=3.464e-01
+  iter 66: subdiag=[0.197+0.j 0.   +0.j 0.277+0.j],  ‖·‖₂=3.398e-01
+  iter 67: subdiag=[-0.192-0.j  0.   +0.j -0.272-0.j],  ‖·‖₂=3.332e-01
+  iter 68: subdiag=[0.187+0.j 0.   +0.j 0.268+0.j],  ‖·‖₂=3.267e-01
+  iter 69: subdiag=[-0.183-0.j  0.   +0.j -0.263+0.j],  ‖·‖₂=3.204e-01
+  iter 70: subdiag=[0.178+0.j 0.   +0.j 0.259+0.j],  ‖·‖₂=3.141e-01
+  iter 71: subdiag=[-0.174-0.j  0.   +0.j -0.254-0.j],  ‖·‖₂=3.080e-01
+  iter 72: subdiag=[0.169+0.j 0.   +0.j 0.25 +0.j],  ‖·‖₂=3.020e-01
+  iter 73: subdiag=[-0.165-0.j  0.   +0.j -0.246-0.j],  ‖·‖₂=2.960e-01
+  iter 74: subdiag=[0.161+0.j 0.   +0.j 0.241+0.j],  ‖·‖₂=2.902e-01
+  iter 75: subdiag=[-0.157-0.j  0.   +0.j -0.237-0.j],  ‖·‖₂=2.845e-01
+  iter 76: subdiag=[0.153+0.j 0.   +0.j 0.233+0.j],  ‖·‖₂=2.789e-01
+  iter 77: subdiag=[-0.149-0.j  0.   +0.j -0.229+0.j],  ‖·‖₂=2.733e-01
+  iter 78: subdiag=[0.146+0.j 0.   +0.j 0.225-0.j],  ‖·‖₂=2.679e-01
+  iter 79: subdiag=[-0.142-0.j  0.   +0.j -0.221+0.j],  ‖·‖₂=2.626e-01
+  iter 80: subdiag=[0.138+0.j 0.   +0.j 0.217+0.j],  ‖·‖₂=2.574e-01
+  iter 81: subdiag=[-0.135-0.j  0.   +0.j -0.213+0.j],  ‖·‖₂=2.522e-01
+  iter 82: subdiag=[0.131+0.j 0.   +0.j 0.209+0.j],  ‖·‖₂=2.472e-01
+  iter 83: subdiag=[-0.128-0.j  0.   +0.j -0.206-0.j],  ‖·‖₂=2.423e-01
+  iter 84: subdiag=[0.125+0.j 0.   +0.j 0.202+0.j],  ‖·‖₂=2.374e-01
+  iter 85: subdiag=[-0.122-0.j  0.   +0.j -0.198-0.j],  ‖·‖₂=2.327e-01
+  iter 86: subdiag=[0.119+0.j 0.   +0.j 0.195+0.j],  ‖·‖₂=2.280e-01
+  iter 87: subdiag=[-0.116-0.j  0.   +0.j -0.191-0.j],  ‖·‖₂=2.234e-01
+  iter 88: subdiag=[0.113+0.j 0.   +0.j 0.188+0.j],  ‖·‖₂=2.189e-01
+  iter 89: subdiag=[-0.11 -0.j  0.   +0.j -0.184+0.j],  ‖·‖₂=2.145e-01
+  iter 90: subdiag=[0.107+0.j 0.   +0.j 0.181-0.j],  ‖·‖₂=2.102e-01
+  iter 91: subdiag=[-0.104-0.j  0.   +0.j -0.178+0.j],  ‖·‖₂=2.060e-01
+  iter 92: subdiag=[0.101+0.j 0.   +0.j 0.174-0.j],  ‖·‖₂=2.018e-01
+  iter 93: subdiag=[-0.099-0.j  0.   +0.j -0.171+0.j],  ‖·‖₂=1.978e-01
+  iter 94: subdiag=[0.096+0.j 0.   +0.j 0.168+0.j],  ‖·‖₂=1.938e-01
+  iter 95: subdiag=[-0.094-0.j  0.   +0.j -0.165-0.j],  ‖·‖₂=1.899e-01
+  iter 96: subdiag=[0.091+0.j 0.   +0.j 0.162+0.j],  ‖·‖₂=1.860e-01
+  iter 97: subdiag=[-0.089-0.j  0.   +0.j -0.159-0.j],  ‖·‖₂=1.823e-01
+  iter 98: subdiag=[0.087+0.j 0.   +0.j 0.156+0.j],  ‖·‖₂=1.786e-01
+  iter 99: subdiag=[-0.085-0.j  0.   +0.j -0.153+0.j],  ‖·‖₂=1.750e-01
+  after : subdiag=[-0.085-0.j  0.   +0.j -0.153+0.j],  ‖·‖₂=1.750e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.085 0.    0.153]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 14 ---
-Fixed shift used (eigenvalue of the final block): 0.8706109171378603 (modulus 0.8706)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.239 -0.766  0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 14/30  (size 4x4)
+│  fixed shift μ = 0.842538 (|μ|=0.8425)
+  before: subdiag=[-0.944+0.j  0.964+0.j  0.696+0.j],  ‖·‖₂=1.518e+00
+  iter 00: subdiag=[-0.662+0.j -0.644+0.j -0.413+0.j],  ‖·‖₂=1.012e+00
+  iter 01: subdiag=[-0.628+0.j  0.166+0.j  0.387+0.j],  ‖·‖₂=7.558e-01
+  iter 02: subdiag=[-0.626+0.j -0.038+0.j -0.386+0.j],  ‖·‖₂=7.360e-01
+  iter 03: subdiag=[-0.626+0.j  0.009+0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 04: subdiag=[-0.626+0.j -0.002+0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 05: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 06: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 07: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 08: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 09: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 10: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 11: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 12: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 13: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 14: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 15: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 16: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 17: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 18: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 19: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 20: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 21: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 22: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 23: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 24: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 25: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 26: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 27: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 28: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 29: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 30: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 31: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 32: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 33: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 34: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 35: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 36: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 37: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 38: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 39: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 40: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 41: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 42: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 43: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 44: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 45: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 46: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 47: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 48: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 49: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 50: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 51: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 52: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 53: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 54: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 55: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 56: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 57: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 58: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 59: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 60: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 61: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 62: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 63: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 64: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 65: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 66: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 67: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 68: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 69: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 70: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 71: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 72: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 73: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 74: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 75: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 76: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 77: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 78: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 79: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 80: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 81: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 82: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 83: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 84: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 85: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 86: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 87: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 88: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 89: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 90: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 91: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 92: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 93: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 94: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 95: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 96: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 97: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 98: subdiag=[-0.626+0.j -0.   +0.j -0.386+0.j],  ‖·‖₂=7.349e-01
+  iter 99: subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+  after : subdiag=[-0.626+0.j  0.   +0.j  0.386+0.j],  ‖·‖₂=7.349e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.626 0.    0.386]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 15 ---
-Fixed shift used (eigenvalue of the final block): 0.7877591057872764 (modulus 0.7878)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.259 -0.103 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 15/30  (size 4x4)
+│  fixed shift μ = 0.941615 (|μ|=0.9416)
+  before: subdiag=[-0.745+0.j  0.93 +0.j -0.49 +0.j],  ‖·‖₂=1.288e+00
+  iter 00: subdiag=[-0.99 +0.j  0.927+0.j -0.031+0.j],  ‖·‖₂=1.356e+00
+  iter 01: subdiag=[-0.767+0.j  0.739+0.j -0.002+0.j],  ‖·‖₂=1.065e+00
+  iter 02: subdiag=[-0.338+0.j  0.69 +0.j -0.   +0.j],  ‖·‖₂=7.680e-01
+  iter 03: subdiag=[-0.127+0.j  0.682+0.j -0.   +0.j],  ‖·‖₂=6.941e-01
+  iter 04: subdiag=[-0.047+0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.829e-01
+  iter 05: subdiag=[-0.017+0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.813e-01
+  iter 06: subdiag=[-0.006+0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 07: subdiag=[-0.002+0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 08: subdiag=[-0.001+0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 09: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 10: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 11: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 12: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 13: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 14: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 15: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 16: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 17: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 18: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 19: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 20: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 21: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 22: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 23: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 24: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 25: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 26: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 27: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 28: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 29: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 30: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 31: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 32: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 33: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 34: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 35: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 36: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 37: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 38: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 39: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 40: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 41: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 42: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 43: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 44: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 45: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 46: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 47: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 48: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 49: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 50: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 51: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 52: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 53: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 54: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 55: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 56: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 57: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 58: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 59: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 60: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 61: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 62: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 63: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 64: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 65: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 66: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 67: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 68: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 69: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 70: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 71: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 72: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 73: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 74: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 75: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 76: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 77: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 78: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 79: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 80: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 81: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 82: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 83: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 84: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 85: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 86: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 87: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 88: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 89: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 90: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 91: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 92: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 93: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 94: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 95: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 96: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 97: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 98: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  iter 99: subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+  after : subdiag=[-0.   +0.j  0.681+0.j -0.   +0.j],  ‖·‖₂=6.811e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.    0.681 0.   ]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 16 ---
-Fixed shift used (eigenvalue of the final block): 0.7525805488977373 (modulus 0.7526)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.537 -0.738 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 16/30  (size 4x4)
+│  fixed shift μ = 0.533835 (|μ|=0.5338)
+  before: subdiag=[ 0.92 +0.j  0.998+0.j -0.89 +0.j],  ‖·‖₂=1.624e+00
+  iter 00: subdiag=[ 0.987+0.j -0.962+0.j  0.616+0.j],  ‖·‖₂=1.510e+00
+  iter 01: subdiag=[ 0.908+0.j  0.654+0.j -0.485+0.j],  ‖·‖₂=1.219e+00
+  iter 02: subdiag=[ 0.877+0.j -0.318+0.j  0.453+0.j],  ‖·‖₂=1.037e+00
+  iter 03: subdiag=[ 0.87 +0.j  0.139+0.j -0.447+0.j],  ‖·‖₂=9.880e-01
+  iter 04: subdiag=[ 0.869+0.j -0.06 +0.j  0.446+0.j],  ‖·‖₂=9.783e-01
+  iter 05: subdiag=[ 0.869+0.j  0.025+0.j -0.445+0.j],  ‖·‖₂=9.766e-01
+  iter 06: subdiag=[ 0.869+0.j -0.011+0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 07: subdiag=[ 0.869+0.j  0.005+0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 08: subdiag=[ 0.869+0.j -0.002+0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 09: subdiag=[ 0.869+0.j  0.001+0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 10: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 11: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 12: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 13: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 14: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 15: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 16: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 17: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 18: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 19: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 20: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 21: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 22: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 23: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 24: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 25: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 26: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 27: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 28: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 29: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 30: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 31: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 32: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 33: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 34: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 35: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 36: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 37: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 38: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 39: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 40: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 41: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 42: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 43: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 44: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 45: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 46: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 47: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 48: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 49: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 50: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 51: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 52: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 53: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 54: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 55: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 56: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 57: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 58: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 59: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 60: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 61: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 62: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 63: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 64: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 65: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 66: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 67: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 68: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 69: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 70: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 71: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 72: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 73: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 74: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 75: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 76: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 77: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 78: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 79: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 80: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 81: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 82: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 83: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 84: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 85: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 86: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 87: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 88: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 89: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 90: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 91: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 92: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 93: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 94: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 95: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 96: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 97: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 98: subdiag=[ 0.869+0.j -0.   +0.j  0.445+0.j],  ‖·‖₂=9.762e-01
+  iter 99: subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+  after : subdiag=[ 0.869+0.j  0.   +0.j -0.445+0.j],  ‖·‖₂=9.762e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.869 0.    0.445]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 17 ---
-Fixed shift used (eigenvalue of the final block): 0.9376989809342731 (modulus 0.9377)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[ 0.003 -0.996  0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 17/30  (size 4x4)
+│  fixed shift μ = 0.0598199-0.0955454j (|μ|=0.1127)
+  before: subdiag=[0.866+0.j 1.   +0.j 0.993+0.j],  ‖·‖₂=1.654e+00
+  iter 00: subdiag=[-0.888+0.j -0.998-0.j  0.979+0.j],  ‖·‖₂=1.657e+00
+  iter 01: subdiag=[0.904-0.j 0.995+0.j 0.951+0.j],  ‖·‖₂=1.647e+00
+  iter 02: subdiag=[-0.913+0.j -0.992-0.j  0.912+0.j],  ‖·‖₂=1.627e+00
+  iter 03: subdiag=[0.913-0.j 0.987+0.j 0.862+0.j],  ‖·‖₂=1.597e+00
+  iter 04: subdiag=[-0.906+0.j -0.98 -0.j  0.808+0.j],  ‖·‖₂=1.560e+00
+  iter 05: subdiag=[0.893-0.j 0.968+0.j 0.751+0.j],  ‖·‖₂=1.516e+00
+  iter 06: subdiag=[-0.876+0.j -0.95 +0.j  0.696-0.j],  ‖·‖₂=1.468e+00
+  iter 07: subdiag=[0.857-0.j 0.924-0.j 0.643-0.j],  ‖·‖₂=1.415e+00
+  iter 08: subdiag=[-0.838+0.j -0.89 +0.j  0.595-0.j],  ‖·‖₂=1.359e+00
+  iter 09: subdiag=[0.819-0.j 0.847+0.j 0.552-0.j],  ‖·‖₂=1.301e+00
+  iter 10: subdiag=[ 0.801-0.j -0.798-0.j  0.513-0.j],  ‖·‖₂=1.241e+00
+  iter 11: subdiag=[0.786-0.j 0.743+0.j 0.478-0.j],  ‖·‖₂=1.182e+00
+  iter 12: subdiag=[ 0.772-0.j -0.686+0.j  0.447-0.j],  ‖·‖₂=1.125e+00
+  iter 13: subdiag=[0.759-0.j 0.628+0.j 0.419-0.j],  ‖·‖₂=1.071e+00
+  iter 14: subdiag=[ 0.749-0.j -0.571+0.j  0.394-0.j],  ‖·‖₂=1.020e+00
+  iter 15: subdiag=[0.739-0.j 0.516-0.j 0.371-0.j],  ‖·‖₂=9.747e-01
+  iter 16: subdiag=[ 0.731-0.j -0.464+0.j  0.35 -0.j],  ‖·‖₂=9.337e-01
+  iter 17: subdiag=[0.724-0.j 0.416-0.j 0.33 -0.j],  ‖·‖₂=8.975e-01
+  iter 18: subdiag=[ 0.717-0.j -0.371+0.j  0.312-0.j],  ‖·‖₂=8.656e-01
+  iter 19: subdiag=[0.711-0.j 0.331-0.j 0.295-0.j],  ‖·‖₂=8.378e-01
+  iter 20: subdiag=[ 0.705-0.j -0.294+0.j  0.279-0.j],  ‖·‖₂=8.136e-01
+  iter 21: subdiag=[0.7  -0.j 0.261-0.j 0.264-0.j],  ‖·‖₂=7.925e-01
+  iter 22: subdiag=[ 0.695-0.j -0.232+0.j  0.249-0.j],  ‖·‖₂=7.741e-01
+  iter 23: subdiag=[0.69 -0.j 0.206-0.j 0.236-0.j],  ‖·‖₂=7.580e-01
+  iter 24: subdiag=[ 0.686-0.j -0.182+0.j  0.223-0.j],  ‖·‖₂=7.437e-01
+  iter 25: subdiag=[0.681-0.j 0.162-0.j 0.211-0.j],  ‖·‖₂=7.311e-01
+  iter 26: subdiag=[ 0.677-0.j -0.143+0.j  0.2  -0.j],  ‖·‖₂=7.197e-01
+  iter 27: subdiag=[0.672-0.j 0.127-0.j 0.189-0.j],  ‖·‖₂=7.095e-01
+  iter 28: subdiag=[ 0.668-0.j -0.112+0.j  0.178-0.j],  ‖·‖₂=7.001e-01
+  iter 29: subdiag=[0.663-0.j 0.099-0.j 0.168-0.j],  ‖·‖₂=6.915e-01
+  iter 30: subdiag=[ 0.659-0.j -0.088+0.j  0.159-0.j],  ‖·‖₂=6.835e-01
+  iter 31: subdiag=[0.655-0.j 0.078-0.j 0.15 -0.j],  ‖·‖₂=6.761e-01
+  iter 32: subdiag=[ 0.65 -0.j -0.069+0.j  0.142-0.j],  ‖·‖₂=6.690e-01
+  iter 33: subdiag=[0.646-0.j 0.061-0.j 0.134-0.j],  ‖·‖₂=6.624e-01
+  iter 34: subdiag=[ 0.641-0.j -0.054+0.j  0.127-0.j],  ‖·‖₂=6.560e-01
+  iter 35: subdiag=[0.637-0.j 0.048-0.j 0.12 -0.j],  ‖·‖₂=6.499e-01
+  iter 36: subdiag=[ 0.633-0.j -0.043+0.j  0.113-0.j],  ‖·‖₂=6.440e-01
+  iter 37: subdiag=[-0.628+0.j  0.038-0.j  0.107-0.j],  ‖·‖₂=6.382e-01
+  iter 38: subdiag=[ 0.624-0.j -0.033+0.j  0.101-0.j],  ‖·‖₂=6.327e-01
+  iter 39: subdiag=[-0.619+0.j  0.03 -0.j  0.095-0.j],  ‖·‖₂=6.272e-01
+  iter 40: subdiag=[ 0.615-0.j -0.026+0.j  0.09 -0.j],  ‖·‖₂=6.219e-01
+  iter 41: subdiag=[-0.61 +0.j  0.023-0.j  0.084-0.j],  ‖·‖₂=6.166e-01
+  iter 42: subdiag=[ 0.606-0.j -0.021+0.j  0.08 -0.j],  ‖·‖₂=6.115e-01
+  iter 43: subdiag=[-0.601-0.j  0.018-0.j  0.075-0.j],  ‖·‖₂=6.064e-01
+  iter 44: subdiag=[ 0.597+0.j -0.016+0.j  0.071-0.j],  ‖·‖₂=6.014e-01
+  iter 45: subdiag=[-0.592-0.j  0.014-0.j  0.067-0.j],  ‖·‖₂=5.964e-01
+  iter 46: subdiag=[ 0.588+0.j -0.013+0.j  0.063-0.j],  ‖·‖₂=5.915e-01
+  iter 47: subdiag=[-0.584-0.j  0.011-0.j  0.06 -0.j],  ‖·‖₂=5.866e-01
+  iter 48: subdiag=[ 0.579+0.j -0.01 +0.j  0.056-0.j],  ‖·‖₂=5.818e-01
+  iter 49: subdiag=[-0.575-0.j  0.009-0.j  0.053-0.j],  ‖·‖₂=5.770e-01
+  iter 50: subdiag=[ 0.57 +0.j -0.008+0.j  0.05 -0.j],  ‖·‖₂=5.723e-01
+  iter 51: subdiag=[-0.566+0.j  0.007-0.j  0.047-0.j],  ‖·‖₂=5.675e-01
+  iter 52: subdiag=[ 0.561+0.j -0.006+0.j  0.044-0.j],  ‖·‖₂=5.628e-01
+  iter 53: subdiag=[-0.557+0.j  0.005-0.j  0.042-0.j],  ‖·‖₂=5.581e-01
+  iter 54: subdiag=[ 0.552-0.j -0.005+0.j  0.04 -0.j],  ‖·‖₂=5.535e-01
+  iter 55: subdiag=[-0.548+0.j  0.004-0.j  0.037-0.j],  ‖·‖₂=5.488e-01
+  iter 56: subdiag=[ 0.543-0.j -0.004+0.j  0.035-0.j],  ‖·‖₂=5.442e-01
+  iter 57: subdiag=[-0.539+0.j  0.003-0.j  0.033-0.j],  ‖·‖₂=5.396e-01
+  iter 58: subdiag=[ 0.534+0.j -0.003+0.j  0.031-0.j],  ‖·‖₂=5.351e-01
+  iter 59: subdiag=[-0.53 -0.j  0.003-0.j  0.029-0.j],  ‖·‖₂=5.305e-01
+  iter 60: subdiag=[ 0.525+0.j -0.002+0.j  0.028-0.j],  ‖·‖₂=5.260e-01
+  iter 61: subdiag=[-0.521-0.j  0.002-0.j  0.026-0.j],  ‖·‖₂=5.215e-01
+  iter 62: subdiag=[ 0.516+0.j -0.002+0.j  0.025-0.j],  ‖·‖₂=5.170e-01
+  iter 63: subdiag=[-0.512-0.j  0.002-0.j  0.023-0.j],  ‖·‖₂=5.125e-01
+  iter 64: subdiag=[ 0.508+0.j -0.001+0.j  0.022-0.j],  ‖·‖₂=5.080e-01
+  iter 65: subdiag=[-0.503+0.j  0.001-0.j  0.021-0.j],  ‖·‖₂=5.036e-01
+  iter 66: subdiag=[ 0.499-0.j -0.001+0.j  0.02 -0.j],  ‖·‖₂=4.992e-01
+  iter 67: subdiag=[-0.494+0.j  0.001-0.j  0.018-0.j],  ‖·‖₂=4.948e-01
+  iter 68: subdiag=[ 0.49 -0.j -0.001+0.j  0.017-0.j],  ‖·‖₂=4.904e-01
+  iter 69: subdiag=[-0.486+0.j  0.001-0.j  0.016-0.j],  ‖·‖₂=4.860e-01
+  iter 70: subdiag=[ 0.481-0.j -0.001+0.j  0.015-0.j],  ‖·‖₂=4.817e-01
+  iter 71: subdiag=[-0.477+0.j  0.001-0.j  0.015-0.j],  ‖·‖₂=4.774e-01
+  iter 72: subdiag=[ 0.473-0.j -0.001+0.j  0.014-0.j],  ‖·‖₂=4.731e-01
+  iter 73: subdiag=[-0.469+0.j  0.   -0.j  0.013-0.j],  ‖·‖₂=4.688e-01
+  iter 74: subdiag=[ 0.464-0.j -0.   +0.j  0.012-0.j],  ‖·‖₂=4.645e-01
+  iter 75: subdiag=[-0.46 +0.j  0.   -0.j  0.012-0.j],  ‖·‖₂=4.603e-01
+  iter 76: subdiag=[ 0.456-0.j -0.   +0.j  0.011-0.j],  ‖·‖₂=4.561e-01
+  iter 77: subdiag=[-0.452-0.j  0.   -0.j  0.01 -0.j],  ‖·‖₂=4.519e-01
+  iter 78: subdiag=[ 0.448+0.j -0.   +0.j  0.01 -0.j],  ‖·‖₂=4.477e-01
+  iter 79: subdiag=[-0.443-0.j  0.   -0.j  0.009-0.j],  ‖·‖₂=4.436e-01
+  iter 80: subdiag=[ 0.439+0.j -0.   +0.j  0.009-0.j],  ‖·‖₂=4.394e-01
+  iter 81: subdiag=[-0.435-0.j  0.   -0.j  0.008-0.j],  ‖·‖₂=4.353e-01
+  iter 82: subdiag=[ 0.431+0.j -0.   +0.j  0.008-0.j],  ‖·‖₂=4.313e-01
+  iter 83: subdiag=[-0.427-0.j  0.   -0.j  0.007-0.j],  ‖·‖₂=4.272e-01
+  iter 84: subdiag=[ 0.423+0.j -0.   +0.j  0.007-0.j],  ‖·‖₂=4.232e-01
+  iter 85: subdiag=[-0.419-0.j  0.   -0.j  0.006-0.j],  ‖·‖₂=4.192e-01
+  iter 86: subdiag=[ 0.415+0.j -0.   +0.j  0.006-0.j],  ‖·‖₂=4.152e-01
+  iter 87: subdiag=[-0.411-0.j  0.   -0.j  0.006-0.j],  ‖·‖₂=4.112e-01
+  iter 88: subdiag=[ 0.407+0.j -0.   +0.j  0.005-0.j],  ‖·‖₂=4.073e-01
+  iter 89: subdiag=[-0.403-0.j  0.   -0.j  0.005-0.j],  ‖·‖₂=4.034e-01
+  iter 90: subdiag=[ 0.399+0.j -0.   +0.j  0.005-0.j],  ‖·‖₂=3.995e-01
+  iter 91: subdiag=[-0.396-0.j  0.   -0.j  0.005-0.j],  ‖·‖₂=3.957e-01
+  iter 92: subdiag=[ 0.392+0.j -0.   +0.j  0.004-0.j],  ‖·‖₂=3.918e-01
+  iter 93: subdiag=[-0.388-0.j  0.   -0.j  0.004-0.j],  ‖·‖₂=3.880e-01
+  iter 94: subdiag=[ 0.384+0.j -0.   +0.j  0.004-0.j],  ‖·‖₂=3.842e-01
+  iter 95: subdiag=[-0.38 -0.j  0.   -0.j  0.004-0.j],  ‖·‖₂=3.805e-01
+  iter 96: subdiag=[ 0.377+0.j -0.   +0.j  0.003-0.j],  ‖·‖₂=3.768e-01
+  iter 97: subdiag=[-0.373+0.j  0.   -0.j  0.003-0.j],  ‖·‖₂=3.731e-01
+  iter 98: subdiag=[ 0.369+0.j -0.   +0.j  0.003-0.j],  ‖·‖₂=3.694e-01
+  iter 99: subdiag=[-0.366-0.j  0.   -0.j  0.003-0.j],  ‖·‖₂=3.658e-01
+  after : subdiag=[-0.366-0.j  0.   -0.j  0.003-0.j],  ‖·‖₂=3.658e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.366 0.    0.003]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 18 ---
-Fixed shift used (eigenvalue of the final block): (-0.3332517830071887+0.31982101244995226j) (modulus 0.4619)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.081+0.j  0.   -0.j  0.003-0.j]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 18/30  (size 4x4)
+│  fixed shift μ = 0.0412469-0.965376j (|μ|=0.9663)
+  before: subdiag=[-0.986+0.j -0.358+0.j -0.999+0.j],  ‖·‖₂=1.449e+00
+  iter 00: subdiag=[-0.281-0.j  0.975-0.j -0.203-0.j],  ‖·‖₂=1.035e+00
+  iter 01: subdiag=[-0.184-0.j  0.285-0.j  0.078+0.j],  ‖·‖₂=3.481e-01
+  iter 02: subdiag=[ 0.183+0.j -0.037+0.j -0.043-0.j],  ‖·‖₂=1.915e-01
+  iter 03: subdiag=[-0.184-0.j  0.005-0.j  0.023+0.j],  ‖·‖₂=1.853e-01
+  iter 04: subdiag=[ 0.185+0.j -0.001+0.j -0.012-0.j],  ‖·‖₂=1.850e-01
+  iter 05: subdiag=[ 0.185+0.j -0.   +0.j  0.007+0.j],  ‖·‖₂=1.854e-01
+  iter 06: subdiag=[ 0.186+0.j -0.   +0.j -0.004-0.j],  ‖·‖₂=1.860e-01
+  iter 07: subdiag=[ 0.187+0.j -0.   +0.j  0.002+0.j],  ‖·‖₂=1.866e-01
+  iter 08: subdiag=[ 0.187+0.j -0.   +0.j -0.001-0.j],  ‖·‖₂=1.872e-01
+  iter 09: subdiag=[ 0.188+0.j -0.   +0.j  0.001+0.j],  ‖·‖₂=1.878e-01
+  iter 10: subdiag=[ 0.188+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.884e-01
+  iter 11: subdiag=[ 0.189+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.889e-01
+  iter 12: subdiag=[ 0.189+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.894e-01
+  iter 13: subdiag=[ 0.19+0.j -0.  +0.j  0.  +0.j],  ‖·‖₂=1.898e-01
+  iter 14: subdiag=[ 0.19+0.j -0.  +0.j -0.  -0.j],  ‖·‖₂=1.902e-01
+  iter 15: subdiag=[ 0.191+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.906e-01
+  iter 16: subdiag=[ 0.191+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.909e-01
+  iter 17: subdiag=[ 0.191+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.912e-01
+  iter 18: subdiag=[ 0.191+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.915e-01
+  iter 19: subdiag=[ 0.192+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.917e-01
+  iter 20: subdiag=[ 0.192+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.919e-01
+  iter 21: subdiag=[ 0.192+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.920e-01
+  iter 22: subdiag=[ 0.192+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.921e-01
+  iter 23: subdiag=[ 0.192+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.922e-01
+  iter 24: subdiag=[ 0.192+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.922e-01
+  iter 25: subdiag=[ 0.192+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.922e-01
+  iter 26: subdiag=[ 0.192+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.921e-01
+  iter 27: subdiag=[ 0.192+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.920e-01
+  iter 28: subdiag=[ 0.192+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.919e-01
+  iter 29: subdiag=[ 0.192+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.918e-01
+  iter 30: subdiag=[ 0.192+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.915e-01
+  iter 31: subdiag=[ 0.191+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.913e-01
+  iter 32: subdiag=[ 0.191+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.910e-01
+  iter 33: subdiag=[ 0.191+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.907e-01
+  iter 34: subdiag=[ 0.19+0.j -0.  +0.j -0.  -0.j],  ‖·‖₂=1.903e-01
+  iter 35: subdiag=[ 0.19+0.j -0.  +0.j  0.  +0.j],  ‖·‖₂=1.900e-01
+  iter 36: subdiag=[ 0.19+0.j -0.  +0.j -0.  -0.j],  ‖·‖₂=1.895e-01
+  iter 37: subdiag=[ 0.189+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.891e-01
+  iter 38: subdiag=[ 0.189+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.886e-01
+  iter 39: subdiag=[ 0.188+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.880e-01
+  iter 40: subdiag=[ 0.187+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.875e-01
+  iter 41: subdiag=[ 0.187+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.869e-01
+  iter 42: subdiag=[ 0.186+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.862e-01
+  iter 43: subdiag=[ 0.186+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.855e-01
+  iter 44: subdiag=[ 0.185+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.848e-01
+  iter 45: subdiag=[ 0.184+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.841e-01
+  iter 46: subdiag=[ 0.183+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.833e-01
+  iter 47: subdiag=[ 0.183+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.825e-01
+  iter 48: subdiag=[ 0.182+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.817e-01
+  iter 49: subdiag=[-0.181-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.809e-01
+  iter 50: subdiag=[ 0.18+0.j -0.  +0.j -0.  -0.j],  ‖·‖₂=1.800e-01
+  iter 51: subdiag=[-0.179-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.791e-01
+  iter 52: subdiag=[ 0.178+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.781e-01
+  iter 53: subdiag=[-0.177-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.772e-01
+  iter 54: subdiag=[ 0.176+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.762e-01
+  iter 55: subdiag=[-0.175-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.752e-01
+  iter 56: subdiag=[ 0.174+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.741e-01
+  iter 57: subdiag=[-0.173-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.731e-01
+  iter 58: subdiag=[ 0.172+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.720e-01
+  iter 59: subdiag=[-0.171-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.709e-01
+  iter 60: subdiag=[ 0.17+0.j -0.  +0.j -0.  -0.j],  ‖·‖₂=1.698e-01
+  iter 61: subdiag=[-0.169-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.687e-01
+  iter 62: subdiag=[ 0.167+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.675e-01
+  iter 63: subdiag=[-0.166-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.663e-01
+  iter 64: subdiag=[ 0.165+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.651e-01
+  iter 65: subdiag=[-0.164-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.639e-01
+  iter 66: subdiag=[ 0.163+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.627e-01
+  iter 67: subdiag=[-0.161-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.615e-01
+  iter 68: subdiag=[ 0.16+0.j -0.  +0.j -0.  -0.j],  ‖·‖₂=1.602e-01
+  iter 69: subdiag=[-0.159-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.590e-01
+  iter 70: subdiag=[ 0.158+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.577e-01
+  iter 71: subdiag=[-0.156-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.564e-01
+  iter 72: subdiag=[ 0.155-0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.551e-01
+  iter 73: subdiag=[-0.154-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.538e-01
+  iter 74: subdiag=[ 0.152-0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.525e-01
+  iter 75: subdiag=[-0.151-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.512e-01
+  iter 76: subdiag=[ 0.15-0.j -0.  +0.j -0.  -0.j],  ‖·‖₂=1.498e-01
+  iter 77: subdiag=[-0.148-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.485e-01
+  iter 78: subdiag=[ 0.147+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.472e-01
+  iter 79: subdiag=[-0.146+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.458e-01
+  iter 80: subdiag=[ 0.144-0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.445e-01
+  iter 81: subdiag=[-0.143-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.431e-01
+  iter 82: subdiag=[ 0.142+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.418e-01
+  iter 83: subdiag=[-0.14-0.j -0.  +0.j  0.  +0.j],  ‖·‖₂=1.404e-01
+  iter 84: subdiag=[ 0.139+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.390e-01
+  iter 85: subdiag=[-0.138-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.377e-01
+  iter 86: subdiag=[ 0.136-0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.363e-01
+  iter 87: subdiag=[-0.135+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.349e-01
+  iter 88: subdiag=[ 0.134-0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.336e-01
+  iter 89: subdiag=[-0.132+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.322e-01
+  iter 90: subdiag=[ 0.131+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.309e-01
+  iter 91: subdiag=[-0.129-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.295e-01
+  iter 92: subdiag=[ 0.128-0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.281e-01
+  iter 93: subdiag=[-0.127+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.268e-01
+  iter 94: subdiag=[ 0.125+0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.254e-01
+  iter 95: subdiag=[-0.124+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.241e-01
+  iter 96: subdiag=[ 0.123-0.j -0.   +0.j -0.   -0.j],  ‖·‖₂=1.227e-01
+  iter 97: subdiag=[-0.121+0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.214e-01
+  iter 98: subdiag=[ 0.12-0.j -0.  +0.j -0.  -0.j],  ‖·‖₂=1.201e-01
+  iter 99: subdiag=[-0.119-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.187e-01
+  after : subdiag=[-0.119-0.j -0.   +0.j  0.   +0.j],  ‖·‖₂=1.187e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.119 0.    0.   ]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 19 ---
-Fixed shift used (eigenvalue of the final block): -0.09828756789250936 (modulus 0.0983)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[0.171 0.5   0.14 ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 19/30  (size 4x4)
+│  fixed shift μ = -0.993087 (|μ|=0.9931)
+  before: subdiag=[-0.745+0.j  0.986+0.j  0.139+0.j],  ‖·‖₂=1.244e+00
+  iter 00: subdiag=[-0.592+0.j  0.997+0.j  0.001+0.j],  ‖·‖₂=1.159e+00
+  iter 01: subdiag=[-0.445+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=1.094e+00
+  iter 02: subdiag=[-0.324+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=1.051e+00
+  iter 03: subdiag=[-0.231+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=1.026e+00
+  iter 04: subdiag=[-0.163+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=1.013e+00
+  iter 05: subdiag=[-0.114+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=1.006e+00
+  iter 06: subdiag=[-0.08+0.j  1.  +0.j  0.  +0.j],  ‖·‖₂=1.003e+00
+  iter 07: subdiag=[-0.056+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=1.001e+00
+  iter 08: subdiag=[-0.039+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=1.000e+00
+  iter 09: subdiag=[-0.027+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=1.000e+00
+  iter 10: subdiag=[-0.019+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.999e-01
+  iter 11: subdiag=[-0.013+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.998e-01
+  iter 12: subdiag=[-0.009+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.997e-01
+  iter 13: subdiag=[-0.006+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.997e-01
+  iter 14: subdiag=[-0.005+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.997e-01
+  iter 15: subdiag=[-0.003+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.997e-01
+  iter 16: subdiag=[-0.002+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.997e-01
+  iter 17: subdiag=[-0.002+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.997e-01
+  iter 18: subdiag=[-0.001+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.997e-01
+  iter 19: subdiag=[-0.001+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.997e-01
+  iter 20: subdiag=[-0.001+0.j  1.   +0.j  0.   +0.j],  ‖·‖₂=9.997e-01
+  iter 21: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 22: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 23: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 24: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 25: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 26: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 27: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 28: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 29: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 30: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 31: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 32: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 33: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 34: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 35: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 36: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 37: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 38: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 39: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 40: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 41: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 42: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 43: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 44: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 45: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 46: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 47: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 48: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 49: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 50: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 51: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 52: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 53: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 54: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 55: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 56: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 57: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 58: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 59: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 60: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 61: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 62: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 63: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 64: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 65: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 66: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 67: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 68: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 69: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 70: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 71: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 72: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 73: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 74: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 75: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 76: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 77: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 78: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 79: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 80: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 81: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 82: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 83: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 84: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 85: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 86: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 87: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 88: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 89: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 90: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 91: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 92: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 93: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 94: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 95: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 96: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 97: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 98: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  iter 99: subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+  after : subdiag=[-0.+0.j  1.+0.j  0.+0.j],  ‖·‖₂=9.997e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0. 1. 0.]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 20 ---
-Fixed shift used (eigenvalue of the final block): 0.9649949076474909 (modulus 0.9650)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[ 0.014 -1.    -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 20/30  (size 4x4)
+│  fixed shift μ = 0.943718 (|μ|=0.9437)
+  before: subdiag=[-0.429+0.j -0.972+0.j  0.419+0.j],  ‖·‖₂=1.142e+00
+  iter 00: subdiag=[-0.982+0.j -0.64 +0.j  0.047+0.j],  ‖·‖₂=1.173e+00
+  iter 01: subdiag=[-0.51 +0.j -0.44 +0.j  0.006+0.j],  ‖·‖₂=6.740e-01
+  iter 02: subdiag=[-0.12 +0.j -0.426+0.j  0.001+0.j],  ‖·‖₂=4.427e-01
+  iter 03: subdiag=[-0.027+0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.262e-01
+  iter 04: subdiag=[-0.006+0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 05: subdiag=[-0.001+0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 06: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 07: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 08: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 09: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 10: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 11: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 12: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 13: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 14: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 15: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 16: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 17: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 18: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 19: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 20: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 21: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 22: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 23: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 24: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 25: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 26: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 27: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 28: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 29: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 30: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 31: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 32: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 33: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 34: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 35: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 36: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 37: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 38: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 39: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 40: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 41: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 42: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 43: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 44: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 45: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 46: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 47: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 48: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 49: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 50: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 51: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 52: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 53: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 54: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 55: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 56: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 57: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 58: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 59: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 60: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 61: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 62: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 63: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 64: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 65: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 66: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 67: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 68: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 69: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 70: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 71: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 72: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 73: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 74: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 75: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 76: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 77: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 78: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 79: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 80: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 81: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 82: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 83: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 84: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 85: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 86: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 87: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 88: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 89: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 90: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 91: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 92: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 93: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 94: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 95: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 96: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 97: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 98: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  iter 99: subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+  after : subdiag=[-0.   +0.j -0.425+0.j  0.   +0.j],  ‖·‖₂=4.253e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.    0.425 0.   ]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 21 ---
-Fixed shift used (eigenvalue of the final block): 0.9511618027193621 (modulus 0.9512)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.435  0.573  0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 21/30  (size 4x4)
+│  fixed shift μ = -0.645528 (|μ|=0.6455)
+  before: subdiag=[-0.998+0.j  0.999+0.j  0.737+0.j],  ‖·‖₂=1.593e+00
+  iter 00: subdiag=[-0.902+0.j  0.984+0.j  0.314+0.j],  ‖·‖₂=1.371e+00
+  iter 01: subdiag=[-0.666+0.j  0.955+0.j  0.114+0.j],  ‖·‖₂=1.169e+00
+  iter 02: subdiag=[-0.431+0.j  0.936+0.j  0.041+0.j],  ‖·‖₂=1.032e+00
+  iter 03: subdiag=[-0.262+0.j  0.928+0.j  0.015+0.j],  ‖·‖₂=9.647e-01
+  iter 04: subdiag=[-0.155+0.j  0.925+0.j  0.006+0.j],  ‖·‖₂=9.383e-01
+  iter 05: subdiag=[-0.091+0.j  0.924+0.j  0.002+0.j],  ‖·‖₂=9.288e-01
+  iter 06: subdiag=[-0.053+0.j  0.924+0.j  0.001+0.j],  ‖·‖₂=9.255e-01
+  iter 07: subdiag=[-0.031+0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.244e-01
+  iter 08: subdiag=[-0.018+0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.240e-01
+  iter 09: subdiag=[-0.011+0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.239e-01
+  iter 10: subdiag=[-0.006+0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.239e-01
+  iter 11: subdiag=[-0.004+0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 12: subdiag=[-0.002+0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 13: subdiag=[-0.001+0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 14: subdiag=[-0.001+0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 15: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 16: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 17: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 18: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 19: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 20: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 21: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 22: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 23: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 24: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 25: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 26: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 27: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 28: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 29: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 30: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 31: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 32: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 33: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 34: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 35: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 36: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 37: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 38: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 39: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 40: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 41: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 42: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 43: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 44: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 45: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 46: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 47: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 48: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 49: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 50: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 51: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 52: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 53: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 54: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 55: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 56: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 57: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 58: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 59: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 60: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 61: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 62: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 63: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 64: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 65: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 66: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 67: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 68: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 69: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 70: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 71: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 72: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 73: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 74: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 75: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 76: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 77: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 78: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 79: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 80: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 81: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 82: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 83: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 84: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 85: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 86: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 87: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 88: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 89: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 90: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 91: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 92: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 93: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 94: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 95: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 96: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 97: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 98: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  iter 99: subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+  after : subdiag=[-0.   +0.j  0.924+0.j  0.   +0.j],  ‖·‖₂=9.238e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.    0.924 0.   ]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 22 ---
-Fixed shift used (eigenvalue of the final block): 0.8791066383784223 (modulus 0.8791)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.001 -0.998 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 22/30  (size 4x4)
+│  fixed shift μ = 0.833114 (|μ|=0.8331)
+  before: subdiag=[-0.476+0.j  0.996+0.j  0.602+0.j],  ‖·‖₂=1.258e+00
+  iter 00: subdiag=[-0.329+0.j -0.495+0.j -0.426+0.j],  ‖·‖₂=7.312e-01
+  iter 01: subdiag=[-0.318+0.j  0.123+0.j  0.413+0.j],  ‖·‖₂=5.355e-01
+  iter 02: subdiag=[-0.318+0.j -0.029+0.j -0.412+0.j],  ‖·‖₂=5.211e-01
+  iter 03: subdiag=[-0.318+0.j  0.007+0.j  0.412+0.j],  ‖·‖₂=5.203e-01
+  iter 04: subdiag=[-0.318+0.j -0.002+0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 05: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 06: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 07: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 08: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 09: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 10: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 11: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 12: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 13: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 14: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 15: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 16: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 17: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 18: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 19: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 20: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 21: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 22: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 23: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 24: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 25: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 26: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 27: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 28: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 29: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 30: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 31: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 32: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 33: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 34: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 35: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 36: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 37: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 38: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 39: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 40: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 41: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 42: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 43: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 44: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 45: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 46: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 47: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 48: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 49: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 50: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 51: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 52: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 53: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 54: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 55: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 56: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 57: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 58: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 59: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 60: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 61: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 62: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 63: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 64: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 65: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 66: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 67: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 68: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 69: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 70: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 71: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 72: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 73: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 74: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 75: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 76: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 77: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 78: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 79: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 80: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 81: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 82: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 83: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 84: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 85: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 86: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 87: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 88: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 89: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 90: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 91: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 92: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 93: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 94: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 95: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 96: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 97: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 98: subdiag=[-0.318+0.j -0.   +0.j -0.412+0.j],  ‖·‖₂=5.202e-01
+  iter 99: subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+  after : subdiag=[-0.318+0.j  0.   +0.j  0.412+0.j],  ‖·‖₂=5.202e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.318 0.    0.412]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 23 ---
-Fixed shift used (eigenvalue of the final block): 0.9726088054062819 (modulus 0.9726)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[ 0.008  0.994 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 23/30  (size 4x4)
+│  fixed shift μ = 0.475111-0.570494j (|μ|=0.7424)
+  before: subdiag=[0.907+0.j 0.834+0.j 0.79 +0.j],  ‖·‖₂=1.464e+00
+  iter 00: subdiag=[ 0.727-0.j -0.911-0.j  0.447+0.j],  ‖·‖₂=1.248e+00
+  iter 01: subdiag=[ 0.484-0.j -0.857-0.j -0.193-0.j],  ‖·‖₂=1.003e+00
+  iter 02: subdiag=[-0.345+0.j  0.585+0.j  0.093+0.j],  ‖·‖₂=6.857e-01
+  iter 03: subdiag=[ 0.253-0.j -0.345-0.j -0.048+0.j],  ‖·‖₂=4.310e-01
+  iter 04: subdiag=[-0.185+0.j  0.195+0.j  0.026-0.j],  ‖·‖₂=2.705e-01
+  iter 05: subdiag=[ 0.135-0.j -0.109-0.j -0.014-0.j],  ‖·‖₂=1.741e-01
+  iter 06: subdiag=[-0.097+0.j  0.061+0.j  0.007+0.j],  ‖·‖₂=1.152e-01
+  iter 07: subdiag=[ 0.07 -0.j -0.034-0.j -0.004-0.j],  ‖·‖₂=7.812e-02
+  iter 08: subdiag=[-0.05 +0.j  0.019+0.j  0.002-0.j],  ‖·‖₂=5.393e-02
+  iter 09: subdiag=[ 0.036-0.j -0.011-0.j -0.001+0.j],  ‖·‖₂=3.772e-02
+  iter 10: subdiag=[-0.026+0.j  0.006+0.j  0.001+0.j],  ‖·‖₂=2.661e-02
+  iter 11: subdiag=[ 0.019-0.j -0.003-0.j -0.   -0.j],  ‖·‖₂=1.888e-02
+  iter 12: subdiag=[-0.013+0.j  0.002+0.j  0.   +0.j],  ‖·‖₂=1.345e-02
+  iter 13: subdiag=[ 0.01 -0.j -0.001-0.j -0.   -0.j],  ‖·‖₂=9.598e-03
+  iter 14: subdiag=[-0.007+0.j  0.001+0.j  0.   +0.j],  ‖·‖₂=6.862e-03
+  iter 15: subdiag=[ 0.005-0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=4.910e-03
+  iter 16: subdiag=[-0.004+0.j  0.   +0.j  0.   +0.j],  ‖·‖₂=3.515e-03
+  iter 17: subdiag=[ 0.003-0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=2.517e-03
+  iter 18: subdiag=[-0.002+0.j  0.   +0.j  0.   +0.j],  ‖·‖₂=1.803e-03
+  iter 19: subdiag=[ 0.001-0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=1.292e-03
+  iter 20: subdiag=[-0.001+0.j  0.   +0.j  0.   +0.j],  ‖·‖₂=9.255e-04
+  iter 21: subdiag=[ 0.001-0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=6.631e-04
+  iter 22: subdiag=[-0.+0.j  0.+0.j  0.+0.j],  ‖·‖₂=4.752e-04
+  iter 23: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=3.405e-04
+  iter 24: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=2.440e-04
+  iter 25: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=1.748e-04
+  iter 26: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=1.253e-04
+  iter 27: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=8.975e-05
+  iter 28: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=6.431e-05
+  iter 29: subdiag=[ 0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=4.608e-05
+  iter 30: subdiag=[-0.+0.j  0.+0.j  0.+0.j],  ‖·‖₂=3.302e-05
+  iter 31: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=2.366e-05
+  iter 32: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=1.695e-05
+  iter 33: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=1.215e-05
+  iter 34: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=8.705e-06
+  iter 35: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=6.238e-06
+  iter 36: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=4.470e-06
+  iter 37: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=3.203e-06
+  iter 38: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=2.295e-06
+  iter 39: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=1.645e-06
+  iter 40: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=1.178e-06
+  iter 41: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=8.444e-07
+  iter 42: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=6.050e-07
+  iter 43: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=4.335e-07
+  iter 44: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=3.107e-07
+  iter 45: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=2.226e-07
+  iter 46: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=1.595e-07
+  iter 47: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=1.143e-07
+  iter 48: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=8.190e-08
+  iter 49: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=5.868e-08
+  iter 50: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=4.205e-08
+  iter 51: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=3.013e-08
+  iter 52: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=2.159e-08
+  iter 53: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=1.547e-08
+  iter 54: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=1.109e-08
+  iter 55: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=7.944e-09
+  iter 56: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=5.692e-09
+  iter 57: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=4.079e-09
+  iter 58: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=2.923e-09
+  iter 59: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=2.094e-09
+  iter 60: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=1.501e-09
+  iter 61: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=1.075e-09
+  iter 62: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=7.705e-10
+  iter 63: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=5.521e-10
+  iter 64: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=3.956e-10
+  iter 65: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=2.835e-10
+  iter 66: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=2.031e-10
+  iter 67: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=1.455e-10
+  iter 68: subdiag=[-0.+0.j  0.+0.j  0.-0.j],  ‖·‖₂=1.043e-10
+  iter 69: subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=7.473e-11
+  after : subdiag=[ 0.-0.j -0.-0.j -0.+0.j],  ‖·‖₂=7.473e-11
+│  iterations    = 70/100
+│  sub‑diag magnitudes after last step:
+│  [0. 0. 0.]
+└─ converged?    = yes
 
---- Orthogonal Matrix Q number 24 ---
-Fixed shift used (eigenvalue of the final block): (-0.48219741339866473+0.8310922170834656j) (modulus 0.9608)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.442+0.j -0.   +0.j  0.   +0.j]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 24/30  (size 4x4)
+│  fixed shift μ = 0.921576-0.227859j (|μ|=0.9493)
+  before: subdiag=[-0.916+0.j  0.433+0.j -0.245+0.j],  ‖·‖₂=1.042e+00
+  iter 00: subdiag=[-0.888+0.j -0.146-0.j -0.052-0.j],  ‖·‖₂=9.016e-01
+  iter 01: subdiag=[-0.756-0.j  0.066+0.j -0.006-0.j],  ‖·‖₂=7.589e-01
+  iter 02: subdiag=[-0.595+0.j -0.031-0.j -0.001+0.j],  ‖·‖₂=5.955e-01
+  iter 03: subdiag=[-0.446-0.j  0.015+0.j -0.   +0.j],  ‖·‖₂=4.459e-01
+  iter 04: subdiag=[-0.325-0.j -0.007-0.j -0.   +0.j],  ‖·‖₂=3.251e-01
+  iter 05: subdiag=[-0.234-0.j  0.003+0.j -0.   -0.j],  ‖·‖₂=2.336e-01
+  iter 06: subdiag=[-0.167-0.j -0.002-0.j -0.   -0.j],  ‖·‖₂=1.666e-01
+  iter 07: subdiag=[-0.118-0.j  0.001+0.j -0.   -0.j],  ‖·‖₂=1.184e-01
+  iter 08: subdiag=[-0.084-0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=8.395e-02
+  iter 09: subdiag=[-0.059-0.j  0.   +0.j -0.   -0.j],  ‖·‖₂=5.947e-02
+  iter 10: subdiag=[-0.042-0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=4.211e-02
+  iter 11: subdiag=[-0.03-0.j  0.  +0.j -0.  +0.j],  ‖·‖₂=2.981e-02
+  iter 12: subdiag=[-0.021-0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=2.110e-02
+  iter 13: subdiag=[-0.015+0.j  0.   +0.j -0.   +0.j],  ‖·‖₂=1.493e-02
+  iter 14: subdiag=[-0.011-0.j -0.   -0.j -0.   +0.j],  ‖·‖₂=1.057e-02
+  iter 15: subdiag=[-0.007-0.j  0.   +0.j -0.   -0.j],  ‖·‖₂=7.480e-03
+  iter 16: subdiag=[-0.005-0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=5.294e-03
+  iter 17: subdiag=[-0.004-0.j  0.   +0.j -0.   -0.j],  ‖·‖₂=3.747e-03
+  iter 18: subdiag=[-0.003-0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=2.652e-03
+  iter 19: subdiag=[-0.002-0.j  0.   +0.j -0.   -0.j],  ‖·‖₂=1.877e-03
+  iter 20: subdiag=[-0.001-0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=1.328e-03
+  iter 21: subdiag=[-0.001+0.j  0.   +0.j -0.   -0.j],  ‖·‖₂=9.400e-04
+  iter 22: subdiag=[-0.001+0.j -0.   -0.j -0.   -0.j],  ‖·‖₂=6.652e-04
+  iter 23: subdiag=[-0.+0.j  0.+0.j -0.+0.j],  ‖·‖₂=4.708e-04
+  iter 24: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=3.332e-04
+  iter 25: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=2.358e-04
+  iter 26: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=1.669e-04
+  iter 27: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=1.181e-04
+  iter 28: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=8.359e-05
+  iter 29: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=5.916e-05
+  iter 30: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=4.187e-05
+  iter 31: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=2.963e-05
+  iter 32: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=2.097e-05
+  iter 33: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=1.484e-05
+  iter 34: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=1.050e-05
+  iter 35: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=7.434e-06
+  iter 36: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=5.261e-06
+  iter 37: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=3.724e-06
+  iter 38: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=2.635e-06
+  iter 39: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=1.865e-06
+  iter 40: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=1.320e-06
+  iter 41: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=9.342e-07
+  iter 42: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=6.611e-07
+  iter 43: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=4.679e-07
+  iter 44: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=3.311e-07
+  iter 45: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=2.344e-07
+  iter 46: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=1.659e-07
+  iter 47: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=1.174e-07
+  iter 48: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=8.308e-08
+  iter 49: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=5.880e-08
+  iter 50: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=4.161e-08
+  iter 51: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=2.945e-08
+  iter 52: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=2.084e-08
+  iter 53: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=1.475e-08
+  iter 54: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=1.044e-08
+  iter 55: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=7.388e-09
+  iter 56: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=5.229e-09
+  iter 57: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=3.701e-09
+  iter 58: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=2.619e-09
+  iter 59: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=1.854e-09
+  iter 60: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=1.312e-09
+  iter 61: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=9.284e-10
+  iter 62: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=6.570e-10
+  iter 63: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=4.650e-10
+  iter 64: subdiag=[-0.-0.j -0.-0.j -0.-0.j],  ‖·‖₂=3.291e-10
+  iter 65: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=2.329e-10
+  iter 66: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=1.648e-10
+  iter 67: subdiag=[-0.+0.j  0.+0.j -0.-0.j],  ‖·‖₂=1.167e-10
+  iter 68: subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=8.256e-11
+  after : subdiag=[-0.+0.j -0.-0.j -0.-0.j],  ‖·‖₂=8.256e-11
+│  iterations    = 69/100
+│  sub‑diag magnitudes after last step:
+│  [0. 0. 0.]
+└─ converged?    = yes
 
---- Orthogonal Matrix Q number 25 ---
-Fixed shift used (eigenvalue of the final block): (-0.9055728105908702+0.3001257739418847j) (modulus 0.9540)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.+0.j -0.+0.j -0.-0.j]
-Converged to almost upper triangular form? Yes
---------------------------------------------------
+┌─ Matrix 25/30  (size 4x4)
+│  fixed shift μ = -0.65739-0.393338j (|μ|=0.7661)
+  before: subdiag=[ 0.282+0.j  0.81 +0.j -0.56 +0.j],  ‖·‖₂=1.024e+00
+  iter 00: subdiag=[-0.423+0.j  0.699+0.j  0.406+0.j],  ‖·‖₂=9.128e-01
+  iter 01: subdiag=[ 0.525-0.j  0.476+0.j -0.313+0.j],  ‖·‖₂=7.751e-01
+  iter 02: subdiag=[ 0.389-0.j -0.366-0.j  0.245+0.j],  ‖·‖₂=5.879e-01
+  iter 03: subdiag=[-0.207-0.j  0.318+0.j -0.189+0.j],  ‖·‖₂=4.242e-01
+  iter 04: subdiag=[ 0.1  -0.j -0.287-0.j  0.143+0.j],  ‖·‖₂=3.359e-01
+  iter 05: subdiag=[-0.047+0.j  0.259+0.j -0.108-0.j],  ‖·‖₂=2.846e-01
+  iter 06: subdiag=[ 0.022+0.j -0.233-0.j  0.081+0.j],  ‖·‖₂=2.481e-01
+  iter 07: subdiag=[-0.011-0.j  0.21 +0.j -0.061-0.j],  ‖·‖₂=2.187e-01
+  iter 08: subdiag=[ 0.005-0.j -0.188+0.j  0.045+0.j],  ‖·‖₂=1.937e-01
+  iter 09: subdiag=[-0.002-0.j  0.169+0.j -0.034-0.j],  ‖·‖₂=1.721e-01
+  iter 10: subdiag=[ 0.001+0.j -0.151-0.j  0.025+0.j],  ‖·‖₂=1.531e-01
+  iter 11: subdiag=[-0.001-0.j  0.135-0.j -0.019+0.j],  ‖·‖₂=1.363e-01
+  iter 12: subdiag=[ 0.   +0.j -0.121-0.j  0.014+0.j],  ‖·‖₂=1.215e-01
+  iter 13: subdiag=[-0.   +0.j  0.108+0.j -0.011+0.j],  ‖·‖₂=1.083e-01
+  iter 14: subdiag=[ 0.   +0.j -0.096+0.j  0.008+0.j],  ‖·‖₂=9.653e-02
+  iter 15: subdiag=[-0.   -0.j  0.086+0.j -0.006-0.j],  ‖·‖₂=8.606e-02
+  iter 16: subdiag=[ 0.   +0.j -0.077-0.j  0.004+0.j],  ‖·‖₂=7.673e-02
+  iter 17: subdiag=[-0.   -0.j  0.068+0.j -0.003-0.j],  ‖·‖₂=6.842e-02
+  iter 18: subdiag=[ 0.   +0.j -0.061-0.j  0.003+0.j],  ‖·‖₂=6.100e-02
+  iter 19: subdiag=[-0.   +0.j  0.054+0.j -0.002+0.j],  ‖·‖₂=5.438e-02
+  iter 20: subdiag=[ 0.   -0.j -0.048-0.j  0.001+0.j],  ‖·‖₂=4.848e-02
+  iter 21: subdiag=[-0.   -0.j  0.043-0.j -0.001+0.j],  ‖·‖₂=4.322e-02
+  iter 22: subdiag=[ 0.   +0.j -0.039-0.j  0.001+0.j],  ‖·‖₂=3.853e-02
+  iter 23: subdiag=[-0.   -0.j  0.034+0.j -0.001+0.j],  ‖·‖₂=3.434e-02
+  iter 24: subdiag=[ 0.   +0.j -0.031-0.j  0.   +0.j],  ‖·‖₂=3.061e-02
+  iter 25: subdiag=[-0.   -0.j  0.027+0.j -0.   +0.j],  ‖·‖₂=2.729e-02
+  iter 26: subdiag=[ 0.   +0.j -0.024-0.j  0.   +0.j],  ‖·‖₂=2.432e-02
+  iter 27: subdiag=[-0.   -0.j  0.022+0.j -0.   +0.j],  ‖·‖₂=2.168e-02
+  iter 28: subdiag=[ 0.   -0.j -0.019-0.j  0.   -0.j],  ‖·‖₂=1.932e-02
+  iter 29: subdiag=[-0.   +0.j  0.017-0.j -0.   +0.j],  ‖·‖₂=1.722e-02
+  iter 30: subdiag=[ 0.   -0.j -0.015-0.j  0.   -0.j],  ‖·‖₂=1.535e-02
+  iter 31: subdiag=[-0.   +0.j  0.014+0.j -0.   +0.j],  ‖·‖₂=1.368e-02
+  iter 32: subdiag=[ 0.   +0.j -0.012-0.j  0.   +0.j],  ‖·‖₂=1.220e-02
+  iter 33: subdiag=[-0.   -0.j  0.011+0.j -0.   +0.j],  ‖·‖₂=1.087e-02
+  iter 34: subdiag=[ 0.  +0.j -0.01-0.j  0.  +0.j],  ‖·‖₂=9.688e-03
+  iter 35: subdiag=[-0.   -0.j  0.009+0.j -0.   -0.j],  ‖·‖₂=8.635e-03
+  iter 36: subdiag=[ 0.   +0.j -0.008-0.j  0.   +0.j],  ‖·‖₂=7.696e-03
+  iter 37: subdiag=[-0.   -0.j  0.007+0.j -0.   -0.j],  ‖·‖₂=6.860e-03
+  iter 38: subdiag=[ 0.   +0.j -0.006-0.j  0.   +0.j],  ‖·‖₂=6.114e-03
+  iter 39: subdiag=[-0.   -0.j  0.005+0.j -0.   -0.j],  ‖·‖₂=5.449e-03
+  iter 40: subdiag=[ 0.   +0.j -0.005-0.j  0.   +0.j],  ‖·‖₂=4.857e-03
+  iter 41: subdiag=[-0.   -0.j  0.004+0.j -0.   +0.j],  ‖·‖₂=4.329e-03
+  iter 42: subdiag=[ 0.   +0.j -0.004+0.j  0.   -0.j],  ‖·‖₂=3.858e-03
+  iter 43: subdiag=[-0.   -0.j  0.003-0.j -0.   +0.j],  ‖·‖₂=3.439e-03
+  iter 44: subdiag=[ 0.   +0.j -0.003+0.j  0.   -0.j],  ‖·‖₂=3.065e-03
+  iter 45: subdiag=[-0.   -0.j  0.003+0.j -0.   +0.j],  ‖·‖₂=2.731e-03
+  iter 46: subdiag=[ 0.   +0.j -0.002-0.j  0.   -0.j],  ‖·‖₂=2.434e-03
+  iter 47: subdiag=[-0.   -0.j  0.002+0.j -0.   +0.j],  ‖·‖₂=2.170e-03
+  iter 48: subdiag=[ 0.   +0.j -0.002-0.j  0.   -0.j],  ‖·‖₂=1.934e-03
+  iter 49: subdiag=[-0.   -0.j  0.002+0.j -0.   +0.j],  ‖·‖₂=1.724e-03
+  iter 50: subdiag=[ 0.   +0.j -0.002-0.j  0.   -0.j],  ‖·‖₂=1.536e-03
+  iter 51: subdiag=[-0.   -0.j  0.001+0.j -0.   +0.j],  ‖·‖₂=1.369e-03
+  iter 52: subdiag=[ 0.   +0.j -0.001-0.j  0.   -0.j],  ‖·‖₂=1.220e-03
+  iter 53: subdiag=[-0.   -0.j  0.001-0.j -0.   +0.j],  ‖·‖₂=1.088e-03
+  iter 54: subdiag=[ 0.   +0.j -0.001-0.j  0.   -0.j],  ‖·‖₂=9.694e-04
+  iter 55: subdiag=[-0.   -0.j  0.001+0.j -0.   +0.j],  ‖·‖₂=8.640e-04
+  iter 56: subdiag=[ 0.   +0.j -0.001-0.j  0.   -0.j],  ‖·‖₂=7.701e-04
+  iter 57: subdiag=[-0.   -0.j  0.001+0.j -0.   +0.j],  ‖·‖₂=6.863e-04
+  iter 58: subdiag=[ 0.   +0.j -0.001-0.j  0.   -0.j],  ‖·‖₂=6.117e-04
+  iter 59: subdiag=[-0.   -0.j  0.001+0.j -0.   +0.j],  ‖·‖₂=5.452e-04
+  iter 60: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=4.859e-04
+  iter 61: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=4.331e-04
+  iter 62: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=3.860e-04
+  iter 63: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=3.440e-04
+  iter 64: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=3.066e-04
+  iter 65: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=2.733e-04
+  iter 66: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=2.436e-04
+  iter 67: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=2.171e-04
+  iter 68: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=1.935e-04
+  iter 69: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=1.725e-04
+  iter 70: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=1.537e-04
+  iter 71: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=1.370e-04
+  iter 72: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=1.221e-04
+  iter 73: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=1.088e-04
+  iter 74: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=9.699e-05
+  iter 75: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=8.644e-05
+  iter 76: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=7.704e-05
+  iter 77: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=6.867e-05
+  iter 78: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=6.120e-05
+  iter 79: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=5.455e-05
+  iter 80: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=4.862e-05
+  iter 81: subdiag=[-0.-0.j  0.+0.j -0.+0.j],  ‖·‖₂=4.333e-05
+  iter 82: subdiag=[ 0.+0.j -0.-0.j  0.-0.j],  ‖·‖₂=3.862e-05
+  iter 83: subdiag=[-0.-0.j  0.+0.j -0.+0.j],  ‖·‖₂=3.442e-05
+  iter 84: subdiag=[ 0.+0.j -0.-0.j  0.-0.j],  ‖·‖₂=3.068e-05
+  iter 85: subdiag=[-0.-0.j  0.+0.j -0.+0.j],  ‖·‖₂=2.734e-05
+  iter 86: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=2.437e-05
+  iter 87: subdiag=[-0.-0.j  0.+0.j -0.-0.j],  ‖·‖₂=2.172e-05
+  iter 88: subdiag=[ 0.+0.j -0.-0.j  0.+0.j],  ‖·‖₂=1.936e-05
+  iter 89: subdiag=[-0.-0.j  0.+0.j -0.+0.j],  ‖·‖₂=1.725e-05
+  iter 90: subdiag=[ 0.+0.j -0.-0.j  0.-0.j],  ‖·‖₂=1.538e-05
+  iter 91: subdiag=[-0.-0.j  0.+0.j -0.+0.j],  ‖·‖₂=1.371e-05
+  iter 92: subdiag=[ 0.+0.j -0.-0.j  0.-0.j],  ‖·‖₂=1.222e-05
+  iter 93: subdiag=[-0.-0.j  0.+0.j -0.+0.j],  ‖·‖₂=1.089e-05
+  iter 94: subdiag=[ 0.+0.j -0.-0.j  0.-0.j],  ‖·‖₂=9.704e-06
+  iter 95: subdiag=[-0.-0.j  0.-0.j -0.+0.j],  ‖·‖₂=8.649e-06
+  iter 96: subdiag=[ 0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=7.708e-06
+  iter 97: subdiag=[-0.-0.j  0.-0.j -0.+0.j],  ‖·‖₂=6.870e-06
+  iter 98: subdiag=[ 0.+0.j -0.+0.j  0.-0.j],  ‖·‖₂=6.123e-06
+  iter 99: subdiag=[-0.-0.j  0.-0.j -0.+0.j],  ‖·‖₂=5.458e-06
+  after : subdiag=[-0.-0.j  0.-0.j -0.+0.j],  ‖·‖₂=5.458e-06
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0. 0. 0.]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 26 ---
-Fixed shift used (eigenvalue of the final block): 0.9549576704039157 (modulus 0.9550)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[ 0.001  0.995 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 26/30  (size 4x4)
+│  fixed shift μ = 0.755595 (|μ|=0.7556)
+  before: subdiag=[-0.994+0.j -0.988+0.j -0.76 +0.j],  ‖·‖₂=1.594e+00
+  iter 00: subdiag=[-0.882+0.j -0.998+0.j -0.19 +0.j],  ‖·‖₂=1.345e+00
+  iter 01: subdiag=[-0.701+0.j -0.997+0.j -0.039+0.j],  ‖·‖₂=1.219e+00
+  iter 02: subdiag=[-0.503+0.j -0.988+0.j -0.008+0.j],  ‖·‖₂=1.109e+00
+  iter 03: subdiag=[-0.338+0.j -0.982+0.j -0.002+0.j],  ‖·‖₂=1.039e+00
+  iter 04: subdiag=[-0.221+0.j -0.98 +0.j -0.   +0.j],  ‖·‖₂=1.004e+00
+  iter 05: subdiag=[-0.142+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.887e-01
+  iter 06: subdiag=[-0.091+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.821e-01
+  iter 07: subdiag=[-0.058+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.794e-01
+  iter 08: subdiag=[-0.037+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.783e-01
+  iter 09: subdiag=[-0.024+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.779e-01
+  iter 10: subdiag=[-0.015+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.777e-01
+  iter 11: subdiag=[-0.01 +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.776e-01
+  iter 12: subdiag=[-0.006+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.776e-01
+  iter 13: subdiag=[-0.004+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.776e-01
+  iter 14: subdiag=[-0.002+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.776e-01
+  iter 15: subdiag=[-0.002+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 16: subdiag=[-0.001+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 17: subdiag=[-0.001+0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 18: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 19: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 20: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 21: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 22: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 23: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 24: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 25: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 26: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 27: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 28: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 29: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 30: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 31: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 32: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 33: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 34: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 35: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 36: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 37: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 38: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 39: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 40: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 41: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 42: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 43: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 44: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 45: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 46: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 47: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 48: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 49: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 50: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 51: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 52: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 53: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 54: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 55: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 56: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 57: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 58: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 59: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 60: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 61: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 62: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 63: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 64: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 65: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 66: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 67: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 68: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 69: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 70: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 71: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 72: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 73: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 74: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 75: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 76: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 77: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 78: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 79: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 80: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 81: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 82: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 83: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 84: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 85: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 86: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 87: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 88: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 89: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 90: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 91: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 92: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 93: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 94: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 95: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 96: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 97: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 98: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  iter 99: subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+  after : subdiag=[-0.   +0.j -0.978+0.j -0.   +0.j],  ‖·‖₂=9.775e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.    0.978 0.   ]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 27 ---
-Fixed shift used (eigenvalue of the final block): -0.3999018693674167 (modulus 0.3999)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[0.    0.693 0.001]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 27/30  (size 4x4)
+│  fixed shift μ = -0.995116 (|μ|=0.9951)
+  before: subdiag=[-0.999+0.j  0.99 +0.j -0.085+0.j],  ‖·‖₂=1.409e+00
+  iter 00: subdiag=[-0.804+0.j  0.902+0.j -0.   +0.j],  ‖·‖₂=1.208e+00
+  iter 01: subdiag=[-0.466+0.j  0.855+0.j -0.   +0.j],  ‖·‖₂=9.735e-01
+  iter 02: subdiag=[-0.234+0.j  0.841+0.j -0.   +0.j],  ‖·‖₂=8.733e-01
+  iter 03: subdiag=[-0.113+0.j  0.838+0.j -0.   +0.j],  ‖·‖₂=8.458e-01
+  iter 04: subdiag=[-0.054+0.j  0.838+0.j -0.   +0.j],  ‖·‖₂=8.392e-01
+  iter 05: subdiag=[-0.026+0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.377e-01
+  iter 06: subdiag=[-0.012+0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.374e-01
+  iter 07: subdiag=[-0.006+0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 08: subdiag=[-0.003+0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 09: subdiag=[-0.001+0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 10: subdiag=[-0.001+0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 11: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 12: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 13: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 14: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 15: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 16: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 17: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 18: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 19: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 20: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 21: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 22: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 23: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 24: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 25: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 26: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 27: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 28: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 29: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 30: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 31: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 32: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 33: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 34: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 35: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 36: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 37: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 38: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 39: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 40: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 41: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 42: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 43: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 44: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 45: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 46: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 47: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 48: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 49: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 50: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 51: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 52: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 53: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 54: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 55: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 56: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 57: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 58: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 59: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 60: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 61: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 62: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 63: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 64: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 65: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 66: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 67: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 68: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 69: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 70: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 71: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 72: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 73: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 74: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 75: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 76: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 77: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 78: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 79: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 80: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 81: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 82: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 83: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 84: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 85: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 86: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 87: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 88: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 89: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 90: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 91: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 92: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 93: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 94: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 95: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 96: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 97: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 98: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  iter 99: subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+  after : subdiag=[-0.   +0.j  0.837+0.j -0.   +0.j],  ‖·‖₂=8.373e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.    0.837 0.   ]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 28 ---
-Fixed shift used (eigenvalue of the final block): 0.4453295247750607 (modulus 0.4453)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[ 0.287  0.893 -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 28/30  (size 4x4)
+│  fixed shift μ = -0.976473 (|μ|=0.9765)
+  before: subdiag=[-0.799+0.j  0.936+0.j  0.149+0.j],  ‖·‖₂=1.239e+00
+  iter 00: subdiag=[-0.683+0.j -0.093+0.j -0.118+0.j],  ‖·‖₂=6.991e-01
+  iter 01: subdiag=[-0.682+0.j  0.006+0.j  0.118+0.j],  ‖·‖₂=6.923e-01
+  iter 02: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 03: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 04: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 05: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 06: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 07: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 08: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 09: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 10: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 11: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 12: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 13: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 14: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 15: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 16: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 17: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 18: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 19: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 20: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 21: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 22: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 23: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 24: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 25: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 26: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 27: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 28: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 29: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 30: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 31: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 32: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 33: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 34: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 35: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 36: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 37: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 38: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 39: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 40: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 41: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 42: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 43: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 44: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 45: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 46: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 47: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 48: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 49: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 50: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 51: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 52: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 53: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 54: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 55: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 56: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 57: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 58: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 59: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 60: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 61: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 62: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 63: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 64: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 65: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 66: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 67: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 68: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 69: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 70: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 71: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 72: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 73: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 74: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 75: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 76: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 77: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 78: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 79: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 80: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 81: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 82: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 83: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 84: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 85: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 86: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 87: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 88: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 89: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 90: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 91: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 92: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 93: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 94: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 95: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 96: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 97: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 98: subdiag=[-0.682+0.j -0.   +0.j -0.118+0.j],  ‖·‖₂=6.922e-01
+  iter 99: subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+  after : subdiag=[-0.682+0.j  0.   +0.j  0.118+0.j],  ‖·‖₂=6.922e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.682 0.    0.118]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 29 ---
-Fixed shift used (eigenvalue of the final block): 0.9851064687720523 (modulus 0.9851)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[-0.002  1.    -0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 29/30  (size 4x4)
+│  fixed shift μ = 0.790166 (|μ|=0.7902)
+  before: subdiag=[ 0.811+0.j -0.867+0.j  0.948+0.j],  ‖·‖₂=1.519e+00
+  iter 00: subdiag=[ 0.726+0.j -0.795+0.j  0.199+0.j],  ‖·‖₂=1.095e+00
+  iter 01: subdiag=[ 0.664+0.j -0.832+0.j  0.027+0.j],  ‖·‖₂=1.064e+00
+  iter 02: subdiag=[ 0.596+0.j -0.861+0.j  0.004+0.j],  ‖·‖₂=1.047e+00
+  iter 03: subdiag=[ 0.525+0.j -0.883+0.j  0.   +0.j],  ‖·‖₂=1.028e+00
+  iter 04: subdiag=[ 0.456+0.j -0.899+0.j  0.   +0.j],  ‖·‖₂=1.008e+00
+  iter 05: subdiag=[ 0.391+0.j -0.909+0.j  0.   +0.j],  ‖·‖₂=9.899e-01
+  iter 06: subdiag=[ 0.332+0.j -0.917+0.j  0.   +0.j],  ‖·‖₂=9.751e-01
+  iter 07: subdiag=[ 0.28 +0.j -0.922+0.j  0.   +0.j],  ‖·‖₂=9.635e-01
+  iter 08: subdiag=[ 0.234+0.j -0.925+0.j  0.   +0.j],  ‖·‖₂=9.547e-01
+  iter 09: subdiag=[ 0.196+0.j -0.928+0.j  0.   +0.j],  ‖·‖₂=9.483e-01
+  iter 10: subdiag=[ 0.163+0.j -0.93 +0.j  0.   +0.j],  ‖·‖₂=9.437e-01
+  iter 11: subdiag=[ 0.135+0.j -0.931+0.j  0.   +0.j],  ‖·‖₂=9.405e-01
+  iter 12: subdiag=[ 0.112+0.j -0.931+0.j  0.   +0.j],  ‖·‖₂=9.382e-01
+  iter 13: subdiag=[ 0.093+0.j -0.932+0.j  0.   +0.j],  ‖·‖₂=9.366e-01
+  iter 14: subdiag=[ 0.077+0.j -0.932+0.j  0.   +0.j],  ‖·‖₂=9.355e-01
+  iter 15: subdiag=[ 0.064+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.348e-01
+  iter 16: subdiag=[ 0.053+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.342e-01
+  iter 17: subdiag=[ 0.044+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.339e-01
+  iter 18: subdiag=[ 0.036+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.336e-01
+  iter 19: subdiag=[ 0.03 +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.335e-01
+  iter 20: subdiag=[ 0.025+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.334e-01
+  iter 21: subdiag=[ 0.02 +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.333e-01
+  iter 22: subdiag=[ 0.017+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.332e-01
+  iter 23: subdiag=[ 0.014+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.332e-01
+  iter 24: subdiag=[ 0.012+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.332e-01
+  iter 25: subdiag=[ 0.01 +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 26: subdiag=[ 0.008+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 27: subdiag=[ 0.007+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 28: subdiag=[ 0.005+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 29: subdiag=[ 0.004+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 30: subdiag=[ 0.004+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 31: subdiag=[ 0.003+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 32: subdiag=[ 0.003+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 33: subdiag=[ 0.002+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 34: subdiag=[ 0.002+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 35: subdiag=[ 0.001+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 36: subdiag=[ 0.001+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 37: subdiag=[ 0.001+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 38: subdiag=[ 0.001+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 39: subdiag=[ 0.001+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 40: subdiag=[ 0.001+0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 41: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 42: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 43: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 44: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 45: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 46: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 47: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 48: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 49: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 50: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 51: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 52: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 53: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 54: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 55: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 56: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 57: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 58: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 59: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 60: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 61: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 62: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 63: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 64: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 65: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 66: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 67: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 68: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 69: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 70: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 71: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 72: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 73: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 74: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 75: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 76: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 77: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 78: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 79: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 80: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 81: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 82: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 83: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 84: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 85: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 86: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 87: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 88: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 89: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 90: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 91: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 92: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 93: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 94: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 95: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 96: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 97: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 98: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  iter 99: subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+  after : subdiag=[ 0.   +0.j -0.933+0.j  0.   +0.j],  ‖·‖₂=9.331e-01
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.    0.933 0.   ]
+└─ converged?    = no
 
---- Orthogonal Matrix Q number 30 ---
-Fixed shift used (eigenvalue of the final block): 0.9234616212297447 (modulus 0.9235)
-Matrix after 20 QR iterations with fixed shift (values below the subdiagonal):
-[0.397 0.598 0.   ]
-Converged to almost upper triangular form? No
---------------------------------------------------
+┌─ Matrix 30/30  (size 4x4)
+│  fixed shift μ = -0.0383725-0.203948j (|μ|=0.2075)
+  before: subdiag=[-0.744+0.j -0.999+0.j -0.997+0.j],  ‖·‖₂=1.596e+00
+  iter 00: subdiag=[-0.752-0.j -0.99 +0.j -0.977+0.j],  ‖·‖₂=1.581e+00
+  iter 01: subdiag=[0.757+0.j 0.957+0.j 0.928-0.j],  ‖·‖₂=1.533e+00
+  iter 02: subdiag=[-0.758-0.j -0.894+0.j -0.87 +0.j],  ‖·‖₂=1.460e+00
+  iter 03: subdiag=[0.76 +0.j 0.803-0.j 0.814-0.j],  ‖·‖₂=1.372e+00
+  iter 04: subdiag=[-0.761-0.j -0.694-0.j -0.766+0.j],  ‖·‖₂=1.284e+00
+  iter 05: subdiag=[0.761+0.j 0.582-0.j 0.729-0.j],  ‖·‖₂=1.204e+00
+  iter 06: subdiag=[-0.758-0.j -0.477+0.j -0.699+0.j],  ‖·‖₂=1.136e+00
+  iter 07: subdiag=[-0.751-0.j -0.385-0.j  0.674-0.j],  ‖·‖₂=1.080e+00
+  iter 08: subdiag=[-0.738-0.j -0.309+0.j -0.653+0.j],  ‖·‖₂=1.033e+00
+  iter 09: subdiag=[-0.719-0.j -0.247+0.j  0.635-0.j],  ‖·‖₂=9.907e-01
+  iter 10: subdiag=[ 0.694+0.j -0.197-0.j -0.618+0.j],  ‖·‖₂=9.504e-01
+  iter 11: subdiag=[-0.665-0.j -0.158-0.j  0.602-0.j],  ‖·‖₂=9.105e-01
+  iter 12: subdiag=[ 0.631+0.j -0.126-0.j -0.586+0.j],  ‖·‖₂=8.704e-01
+  iter 13: subdiag=[-0.594-0.j -0.102-0.j  0.571-0.j],  ‖·‖₂=8.301e-01
+  iter 14: subdiag=[ 0.555+0.j -0.082-0.j -0.556+0.j],  ‖·‖₂=7.899e-01
+  iter 15: subdiag=[-0.516+0.j -0.066-0.j  0.541+0.j],  ‖·‖₂=7.503e-01
+  iter 16: subdiag=[ 0.476+0.j -0.054-0.j -0.526+0.j],  ‖·‖₂=7.118e-01
+  iter 17: subdiag=[-0.438+0.j -0.044-0.j  0.511+0.j],  ‖·‖₂=6.747e-01
+  iter 18: subdiag=[ 0.401-0.j -0.036-0.j -0.496-0.j],  ‖·‖₂=6.393e-01
+  iter 19: subdiag=[-0.366-0.j -0.029+0.j  0.482+0.j],  ‖·‖₂=6.059e-01
+  iter 20: subdiag=[ 0.333+0.j -0.024+0.j -0.467-0.j],  ‖·‖₂=5.745e-01
+  iter 21: subdiag=[-0.303+0.j -0.019+0.j  0.453+0.j],  ‖·‖₂=5.451e-01
+  iter 22: subdiag=[ 0.275+0.j -0.016+0.j -0.439+0.j],  ‖·‖₂=5.176e-01
+  iter 23: subdiag=[-0.248+0.j -0.013+0.j  0.425-0.j],  ‖·‖₂=4.921e-01
+  iter 24: subdiag=[ 0.224-0.j -0.011+0.j -0.411+0.j],  ‖·‖₂=4.682e-01
+  iter 25: subdiag=[-0.203+0.j -0.009-0.j  0.397-0.j],  ‖·‖₂=4.460e-01
+  iter 26: subdiag=[ 0.183+0.j -0.007-0.j -0.384+0.j],  ‖·‖₂=4.253e-01
+  iter 27: subdiag=[-0.165-0.j -0.006-0.j  0.371-0.j],  ‖·‖₂=4.060e-01
+  iter 28: subdiag=[ 0.148+0.j -0.005-0.j -0.358+0.j],  ‖·‖₂=3.878e-01
+  iter 29: subdiag=[-0.134+0.j -0.004-0.j  0.346-0.j],  ‖·‖₂=3.708e-01
+  iter 30: subdiag=[ 0.12 -0.j -0.003-0.j -0.334+0.j],  ‖·‖₂=3.548e-01
+  iter 31: subdiag=[-0.108-0.j -0.003-0.j  0.322-0.j],  ‖·‖₂=3.397e-01
+  iter 32: subdiag=[ 0.097+0.j -0.002-0.j -0.311+0.j],  ‖·‖₂=3.255e-01
+  iter 33: subdiag=[-0.088+0.j -0.002-0.j  0.299-0.j],  ‖·‖₂=3.120e-01
+  iter 34: subdiag=[ 0.079+0.j -0.002-0.j -0.289+0.j],  ‖·‖₂=2.992e-01
+  iter 35: subdiag=[-0.071-0.j -0.001-0.j  0.278-0.j],  ‖·‖₂=2.870e-01
+  iter 36: subdiag=[ 0.064-0.j -0.001+0.j -0.268+0.j],  ‖·‖₂=2.754e-01
+  iter 37: subdiag=[-0.057+0.j -0.001+0.j  0.258-0.j],  ‖·‖₂=2.644e-01
+  iter 38: subdiag=[ 0.051-0.j -0.001+0.j -0.249+0.j],  ‖·‖₂=2.538e-01
+  iter 39: subdiag=[-0.046+0.j -0.001+0.j  0.239-0.j],  ‖·‖₂=2.437e-01
+  iter 40: subdiag=[ 0.042-0.j -0.   +0.j -0.23 +0.j],  ‖·‖₂=2.341e-01
+  iter 41: subdiag=[-0.037+0.j -0.   -0.j  0.222-0.j],  ‖·‖₂=2.249e-01
+  iter 42: subdiag=[ 0.034+0.j -0.   -0.j -0.213+0.j],  ‖·‖₂=2.160e-01
+  iter 43: subdiag=[-0.03 +0.j -0.   -0.j  0.205-0.j],  ‖·‖₂=2.075e-01
+  iter 44: subdiag=[ 0.027-0.j -0.   -0.j -0.198+0.j],  ‖·‖₂=1.994e-01
+  iter 45: subdiag=[-0.024+0.j -0.   -0.j  0.19 -0.j],  ‖·‖₂=1.916e-01
+  iter 46: subdiag=[ 0.022-0.j -0.   -0.j -0.183+0.j],  ‖·‖₂=1.841e-01
+  iter 47: subdiag=[-0.02 +0.j -0.   -0.j  0.176-0.j],  ‖·‖₂=1.769e-01
+  iter 48: subdiag=[ 0.018-0.j -0.   -0.j -0.169+0.j],  ‖·‖₂=1.700e-01
+  iter 49: subdiag=[-0.016+0.j -0.   -0.j  0.163-0.j],  ‖·‖₂=1.634e-01
+  iter 50: subdiag=[ 0.014-0.j -0.   -0.j -0.156+0.j],  ‖·‖₂=1.570e-01
+  iter 51: subdiag=[-0.013+0.j -0.   -0.j  0.15 -0.j],  ‖·‖₂=1.509e-01
+  iter 52: subdiag=[ 0.012-0.j -0.   -0.j -0.145+0.j],  ‖·‖₂=1.450e-01
+  iter 53: subdiag=[-0.01 +0.j -0.   -0.j  0.139+0.j],  ‖·‖₂=1.393e-01
+  iter 54: subdiag=[ 0.009-0.j -0.   +0.j -0.134-0.j],  ‖·‖₂=1.339e-01
+  iter 55: subdiag=[-0.008-0.j -0.   +0.j  0.128+0.j],  ‖·‖₂=1.286e-01
+  iter 56: subdiag=[ 0.008-0.j -0.   +0.j -0.123-0.j],  ‖·‖₂=1.236e-01
+  iter 57: subdiag=[-0.007+0.j -0.   +0.j  0.119+0.j],  ‖·‖₂=1.188e-01
+  iter 58: subdiag=[ 0.006-0.j -0.   +0.j -0.114-0.j],  ‖·‖₂=1.141e-01
+  iter 59: subdiag=[-0.005+0.j -0.   +0.j  0.11 +0.j],  ‖·‖₂=1.097e-01
+  iter 60: subdiag=[ 0.005-0.j -0.   +0.j -0.105-0.j],  ‖·‖₂=1.054e-01
+  iter 61: subdiag=[-0.004+0.j -0.   +0.j  0.101+0.j],  ‖·‖₂=1.013e-01
+  iter 62: subdiag=[ 0.004-0.j -0.   -0.j -0.097-0.j],  ‖·‖₂=9.730e-02
+  iter 63: subdiag=[-0.004+0.j -0.   -0.j  0.093+0.j],  ‖·‖₂=9.349e-02
+  iter 64: subdiag=[ 0.003-0.j -0.   -0.j -0.09 -0.j],  ‖·‖₂=8.983e-02
+  iter 65: subdiag=[-0.003+0.j -0.   -0.j  0.086+0.j],  ‖·‖₂=8.631e-02
+  iter 66: subdiag=[ 0.003-0.j -0.   -0.j -0.083-0.j],  ‖·‖₂=8.292e-02
+  iter 67: subdiag=[-0.002+0.j -0.   -0.j  0.08 +0.j],  ‖·‖₂=7.967e-02
+  iter 68: subdiag=[ 0.002-0.j -0.   -0.j -0.077-0.j],  ‖·‖₂=7.655e-02
+  iter 69: subdiag=[-0.002+0.j -0.   -0.j  0.074+0.j],  ‖·‖₂=7.355e-02
+  iter 70: subdiag=[ 0.002-0.j -0.   -0.j -0.071-0.j],  ‖·‖₂=7.066e-02
+  iter 71: subdiag=[-0.002+0.j -0.   -0.j  0.068+0.j],  ‖·‖₂=6.789e-02
+  iter 72: subdiag=[ 0.001-0.j -0.   -0.j -0.065-0.j],  ‖·‖₂=6.522e-02
+  iter 73: subdiag=[-0.001+0.j -0.   -0.j  0.063+0.j],  ‖·‖₂=6.266e-02
+  iter 74: subdiag=[ 0.001-0.j -0.   -0.j -0.06 -0.j],  ‖·‖₂=6.020e-02
+  iter 75: subdiag=[-0.001+0.j -0.   -0.j  0.058+0.j],  ‖·‖₂=5.783e-02
+  iter 76: subdiag=[ 0.001-0.j -0.   -0.j -0.056-0.j],  ‖·‖₂=5.556e-02
+  iter 77: subdiag=[-0.001+0.j -0.   -0.j  0.053+0.j],  ‖·‖₂=5.338e-02
+  iter 78: subdiag=[ 0.001-0.j -0.   -0.j -0.051-0.j],  ‖·‖₂=5.128e-02
+  iter 79: subdiag=[-0.001+0.j -0.   -0.j  0.049+0.j],  ‖·‖₂=4.926e-02
+  iter 80: subdiag=[ 0.001-0.j -0.   -0.j -0.047-0.j],  ‖·‖₂=4.733e-02
+  iter 81: subdiag=[-0.001+0.j -0.   -0.j  0.045+0.j],  ‖·‖₂=4.547e-02
+  iter 82: subdiag=[ 0.   -0.j -0.   -0.j -0.044-0.j],  ‖·‖₂=4.368e-02
+  iter 83: subdiag=[-0.   +0.j -0.   -0.j  0.042+0.j],  ‖·‖₂=4.196e-02
+  iter 84: subdiag=[ 0.  -0.j -0.  -0.j -0.04-0.j],  ‖·‖₂=4.031e-02
+  iter 85: subdiag=[-0.   +0.j -0.   -0.j  0.039+0.j],  ‖·‖₂=3.872e-02
+  iter 86: subdiag=[ 0.   -0.j -0.   -0.j -0.037-0.j],  ‖·‖₂=3.720e-02
+  iter 87: subdiag=[-0.   +0.j -0.   -0.j  0.036+0.j],  ‖·‖₂=3.574e-02
+  iter 88: subdiag=[ 0.   -0.j -0.   -0.j -0.034-0.j],  ‖·‖₂=3.433e-02
+  iter 89: subdiag=[-0.   +0.j -0.   -0.j  0.033+0.j],  ‖·‖₂=3.298e-02
+  iter 90: subdiag=[ 0.   -0.j -0.   -0.j -0.032-0.j],  ‖·‖₂=3.168e-02
+  iter 91: subdiag=[-0.  +0.j -0.  -0.j  0.03+0.j],  ‖·‖₂=3.043e-02
+  iter 92: subdiag=[ 0.   -0.j -0.   -0.j -0.029-0.j],  ‖·‖₂=2.924e-02
+  iter 93: subdiag=[-0.   +0.j -0.   -0.j  0.028+0.j],  ‖·‖₂=2.809e-02
+  iter 94: subdiag=[ 0.   -0.j -0.   -0.j -0.027-0.j],  ‖·‖₂=2.698e-02
+  iter 95: subdiag=[-0.   +0.j -0.   -0.j  0.026+0.j],  ‖·‖₂=2.592e-02
+  iter 96: subdiag=[ 0.   -0.j -0.   -0.j -0.025-0.j],  ‖·‖₂=2.490e-02
+  iter 97: subdiag=[-0.   +0.j -0.   -0.j  0.024+0.j],  ‖·‖₂=2.392e-02
+  iter 98: subdiag=[ 0.   -0.j -0.   -0.j -0.023-0.j],  ‖·‖₂=2.298e-02
+  iter 99: subdiag=[-0.   +0.j -0.   -0.j  0.022+0.j],  ‖·‖₂=2.207e-02
+  after : subdiag=[-0.   +0.j -0.   -0.j  0.022+0.j],  ‖·‖₂=2.207e-02
+│  iterations    = 100/100
+│  sub‑diag magnitudes after last step:
+│  [0.    0.    0.022]
+└─ converged?    = no
 ```
 
-We therefore conclude that:
+From this monstrosity we conclude that using one constant shift $mu$ (taken from the trailing $2 times 2$ block) attacks only the last sub-diagonal element. That entry shrinks quickly, but the higher sub-diagonals are influenced only through round-off-sized couplings, so they plateau at some non-zero value $approx inv(10, 2)$ Consequently the matrix rarely satisfies the stringent "$abs(H_(i, i-1)) < inv(10, 10)$" test, and the script reports converged = no even after 100 iterations.
 
-+ There is usually no convergence to an upper triangular form, even after $100$ iterations (we have seen only one case where it converged, with a generous tolerance of $inv(10, 5)$).
-
-+ Some values below the subdiagonal are still big (of order 0,01 and so).
-
-+ The chosen shift was not enough for convergence
+Using the Wilkinson shift would definitely force convergence, but since we are using one $mu = lambda_1$ of the trailing $2 times 2$ block, we can expect convergence only for the last sub-diagonal element.
 
 #bibliography("bibliography.bib")
