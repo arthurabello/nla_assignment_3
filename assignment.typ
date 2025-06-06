@@ -400,43 +400,73 @@ def benchmark_hessenberg(size_list, dist:str, mode:str, seed:int|None, reps_smal
     df = pd.DataFrame(records)
     display(df.style.format({"avg":"{:.3e}"}).hide(axis="index"))
 
-    plt.figure(figsize=(7,5))
-    mark = {"general":"o", "symmetric":"s"}
+    plt.figure(figsize=(7, 5))
+
+    mark = {"general": "o", "symmetric": "s"}
     for label, sub in df.groupby("type"):
-        plt.loglog(sub["size"], sub["avg"], marker=mark[label], ls="-", label=label)
-        if len(sub) > 1:
-            a,b = np.polyfit(np.log10(sub["size"]), np.log10(sub["avg"]), 1)
-            plt.loglog(sub["size"], 10**(b+a*np.log10(sub["size"])),
-                       "--", label=f"{label} fit ~ $n^{a:.2f}$")
-    plt.xlabel("matrix size  (log)")
-    plt.ylabel("runtime [s]  (log)")
+        # simple scatter/line plot – no regression curves
+        plt.plot(
+            sub["size"],           # x-axis: matrix order
+            sub["avg"],            # y-axis: average runtime
+            marker=mark[label],
+            ls="-",
+            label=label,
+        )
+
+    plt.xlabel("matrix size  (linear)")
+    plt.ylabel("runtime [s]  (linear)")       # keep or change to log scale as you prefer
     plt.title("Hessenberg (general)  vs  Tridiagonal (symmetric)")
     plt.grid(True, which="both", ls=":")
-    plt.legend(); plt.tight_layout(); plt.show()
-    return df
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 
-#===INTERACTIVE PART=========================================================
+
+# === INTERACTIVE PART ======================================================
+
+
+def parse_size_spec(spec: str):
+    """
+    Accepts either   '[64,128,256,512]'   or   '64:1024:64'
+    Returns a sorted list of unique integers ≥ 2
+    """
+    spec = spec.strip()
+    interval = re.fullmatch(r"\s*(\d+)\s*:\s*(\d+)\s*:\s*(\d+)\s*", spec)
+    if interval:                         # range syntax
+        lo, hi, step = map(int, interval.groups())
+        if step <= 0 or lo < 2 or hi < lo:
+            raise ValueError
+        return list(range(lo, hi + 1, step))
+    # otherwise fall back to literal - must be a list
+    sizes = literal_eval(spec)
+    if (not isinstance(sizes, (list, tuple)) or
+            any((not isinstance(k, int)) or k < 2 for k in sizes)):
+        raise ValueError
+    return sorted(set(sizes))
+
 try:
-    raw = input("\nMatrix sizes (Python list) (e.g): [64,128,256,512,1024]: ")
-    sizes = literal_eval(raw) if raw.strip() else [64,128,256,512,1024]
+    raw = input(
+        "\nMatrix sizes – list '[64,128,256]'  or  interval '64:1024:64' "
+        "(default 64:1024:64): "
+    )
+    sizes = parse_size_spec(raw) if raw else list(range(64, 1025, 64))
 except Exception:
-    print("Bad list -> using default.")
-    sizes = [64,128,256,512,1024]
+    print("Bad specification → using default 64:1024:64.")
+    sizes = list(range(64, 1025, 64))
 
 dist = input("Distribution ('normal'/'uniform')  [normal]: ").strip().lower() or "normal"
 mode_txt = input("Matrix type g=general, s=symmetric, b=both  [g]: ").strip().lower() or "g"
-mode = "symmetric" if mode_txt=="s" else "both" if mode_txt=="b" else "general"
+mode = "symmetric" if mode_txt == "s" else "both" if mode_txt == "b" else "general"
 seed_txt = input("Random seed (None/int) [None]: ").strip()
 seed_val = None if seed_txt.lower() in {"", "none"} else int(seed_txt)
 
-# accuracy on *all* requested sizes
+# accuracy check
 for n in sizes:
-    for sym in ([False, True] if mode=="both" else [mode=="symmetric"]):
+    for sym in ([False, True] if mode == "both" else [mode == "symmetric"]):
         verify_factorisation_once(n, dist, sym, seed_val)
 
-
-benchmark_hessenberg(sizes, dist, mode, seed_val)
+benchmark_hessenberg(sizes, dist, mode, seed_val)  # timings
 ```
 
 The reader should be aware that my poor #link("https://www.dell.com/support/manuals/pt-br/inspiron-15-5590-laptop/inspiron-5590-setup-and-specifications/specifications-of-inspiron-5590?guid=guid-7c9f07ce-626e-44ca-be3a-a1fb036413f9&lang=en-us")[Dell Inspiron 5590] has crashed precisely $5$ times while i was writing this (i might have tried with matrices of order $10^6 times 10^6$). Unfortunately the runtime was around $4$ minutes for a matrix $A approx 10^3 times 10^3$.
@@ -445,44 +475,134 @@ An expected output is:
 
 ```python
 64×64 general
-‖A − Q T Qᵀ‖ = 7.51e-14
-‖QᵀQ − I‖ = 7.07e-15
+‖A − Q T Qᵀ‖ = 8.03e-14
+‖QᵀQ − I‖ = 7.67e-15
 
 64×64 symmetric
-‖A − Q T Qᵀ‖ = 4.83e-14
-‖QᵀQ − I‖ = 7.39e-15
+‖A − Q T Qᵀ‖ = 4.78e-14
+‖QᵀQ − I‖ = 7.32e-15
 
 128×128 general
-‖A − Q T Qᵀ‖ = 1.84e-13
-‖QᵀQ − I‖ = 1.26e-14
+‖A − Q T Qᵀ‖ = 1.80e-13
+‖QᵀQ − I‖ = 1.24e-14
 
 128×128 symmetric
-‖A − Q T Qᵀ‖ = 1.14e-13
+‖A − Q T Qᵀ‖ = 1.13e-13
 ‖QᵀQ − I‖ = 1.25e-14
 
+192×192 general
+‖A − Q T Qᵀ‖ = 3.09e-13
+‖QᵀQ − I‖ = 1.76e-14
+
+192×192 symmetric
+‖A − Q T Qᵀ‖ = 1.91e-13
+‖QᵀQ − I‖ = 1.75e-14
+
 256×256 general
-‖A − Q T Qᵀ‖ = 4.70e-13
-‖QᵀQ − I‖ = 2.28e-14
+‖A − Q T Qᵀ‖ = 4.53e-13
+‖QᵀQ − I‖ = 2.27e-14
 
 256×256 symmetric
-‖A − Q T Qᵀ‖ = 2.78e-13
-‖QᵀQ − I‖ = 2.25e-14
+‖A − Q T Qᵀ‖ = 2.97e-13
+‖QᵀQ − I‖ = 2.38e-14
+
+320×320 general
+‖A − Q T Qᵀ‖ = 6.07e-13
+‖QᵀQ − I‖ = 2.72e-14
+
+320×320 symmetric
+‖A − Q T Qᵀ‖ = 3.76e-13
+‖QᵀQ − I‖ = 2.71e-14
+
+384×384 general
+‖A − Q T Qᵀ‖ = 7.78e-13
+‖QᵀQ − I‖ = 3.11e-14
+
+384×384 symmetric
+‖A − Q T Qᵀ‖ = 4.71e-13
+‖QᵀQ − I‖ = 3.16e-14
+
+448×448 general
+‖A − Q T Qᵀ‖ = 9.35e-13
+‖QᵀQ − I‖ = 3.50e-14
+
+448×448 symmetric
+‖A − Q T Qᵀ‖ = 5.93e-13
+‖QᵀQ − I‖ = 3.72e-14
 
 512×512 general
 ‖A − Q T Qᵀ‖ = 1.16e-12
-‖QᵀQ − I‖ = 4.10e-14
+‖QᵀQ − I‖ = 4.13e-14
 
 512×512 symmetric
-‖A − Q T Qᵀ‖ = 7.10e-13
-‖QᵀQ − I‖ = 4.09e-14
+‖A − Q T Qᵀ‖ = 7.14e-13
+‖QᵀQ − I‖ = 4.13e-14
+
+576×576 general
+‖A − Q T Qᵀ‖ = 1.38e-12
+‖QᵀQ − I‖ = 4.54e-14
+
+576×576 symmetric
+‖A − Q T Qᵀ‖ = 8.39e-13
+‖QᵀQ − I‖ = 4.56e-14
+
+640×640 general
+‖A − Q T Qᵀ‖ = 1.58e-12
+‖QᵀQ − I‖ = 4.93e-14
+
+640×640 symmetric
+‖A − Q T Qᵀ‖ = 9.77e-13
+‖QᵀQ − I‖ = 5.07e-14
+
+704×704 general
+‖A − Q T Qᵀ‖ = 1.81e-12
+‖QᵀQ − I‖ = 5.41e-14
+
+704×704 symmetric
+‖A − Q T Qᵀ‖ = 1.08e-12
+‖QᵀQ − I‖ = 5.35e-14
+
+768×768 general
+‖A − Q T Qᵀ‖ = 2.05e-12
+‖QᵀQ − I‖ = 5.92e-14
+
+768×768 symmetric
+‖A − Q T Qᵀ‖ = 1.25e-12
+‖QᵀQ − I‖ = 5.98e-14
+
+832×832 general
+‖A − Q T Qᵀ‖ = 2.29e-12
+‖QᵀQ − I‖ = 6.32e-14
+
+832×832 symmetric
+‖A − Q T Qᵀ‖ = 1.38e-12
+‖QᵀQ − I‖ = 6.28e-14
+
+896×896 general
+‖A − Q T Qᵀ‖ = 2.53e-12
+‖QᵀQ − I‖ = 6.71e-14
+
+896×896 symmetric
+‖A − Q T Qᵀ‖ = 1.50e-12
+‖QᵀQ − I‖ = 6.65e-14
+
+960×960 general
+‖A − Q T Qᵀ‖ = 2.78e-12
+‖QᵀQ − I‖ = 7.14e-14
+
+960×960 symmetric
+‖A − Q T Qᵀ‖ = 1.68e-12
+‖QᵀQ − I‖ = 7.19e-14
 
 1024×1024 general
-‖A − Q T Qᵀ‖ = 3.05e-12
-‖QᵀQ − I‖ = 7.57e-14
+‖A − Q T Qᵀ‖ = 3.09e-12
+‖QᵀQ − I‖ = 7.71e-14
 
 1024×1024 symmetric
 ‖A − Q T Qᵀ‖ = 1.84e-12
-‖QᵀQ − I‖ = 7.64e-14
+‖QᵀQ − I‖ = 7.53e-14
+
+
 ```
 As $n$ grows, we observe that the residuals also grow, but still in machine precision. The difference between the symmetric and nonsymmetric cases are more pronounced in larger matrices.
 
@@ -497,7 +617,9 @@ As $n$ grows, we observe that the residuals also grow, but still in machine prec
 === Complexity (c)
 <section_complexity>
 
-@figure_plot_evaluation_hessenberg_function shows the expected $O(n^3)$ complexity for the general case and $O(n^2)$ for the symmetric case. The latter is better discussed in @section_symmetric_case.
+@figure_plot_evaluation_hessenberg_function shows the expected $O(n^3)$ complexity for the general case and usually half of it for the symmetric case. The latter is better discussed in @section_symmetric_case.
+
+The weird behavior of the general case after $n approx 760$ is due purely to hardware restrictions, not mathematical ones. #link("https://numpy.org/devdocs/building/blas_lapack.html")[NumPy] delegates the heavy multiply-add to OpenBLAS / MKL. Those libraries switch to different blocking sizes and sometimes to multi-threaded kernels at dimension “milestones” (often multiples of $64$ or $128$). The change in algorithmic constant shows up as local bumps or dips. Residual noise comes from thread scheduling and page-fault variability in long runs.
 
 To understand why the complexity is $O(n^3)$ in the general case, we can look at the algorithm. The outer loop runs $n - 2$ times, and inside it, we have two matrix-vector products and two outer products, which are all $O(n^2)$. Thus, the total complexity is $O(n^3)$.
 
@@ -564,12 +686,10 @@ Since $phi_j / abs(phi_j) = plus.minus 1$, the sequence converges to the eigenve
 == Inverse Iteration
 <section_inverse_iteration>
 
-Consider $mu in RR without Lambda$, where $Lambda$ is the set of eigenvalues of $A$. The eigenvalues $hat(lambda)$ of $inv((A - mu I), 1)$ are:
+We know that if $A in CC^(m times m), det(A) != 0$ has $Lambda subset RR := {lambda_j}$ as eigenvalues, then the eigenvalues of $inv(A, 1)$ are $inv(lambda_j, 1)$. Similarly the eigenvalues of $A + phi I$ are $lambda_j + phi$. So the eigenvalues of $inv((A - mu I), 1), mu in RR without Lambda$ are:
 
 $
-  det(A - mu I - hat(lambda) I) = 0 <=> det(A - (mu + hat(lambda)) I) = 0\
-
-    <=> hat(lambda)_j = 1 / (lambda_j - mu)
+  hat(lambda_j) = 1 / (lambda_j - mu)
 $
 
 Where $lambda_j$ are the eigenvalues of $A$. So if $mu$ is close to an eigenvalue, then $hat(lambda)$ will be large. Power iteration seems interesting here, so the sequence:
@@ -634,13 +754,7 @@ Since no eigenvalue dominates other eigenvalues in the orthogonal case, usually 
 == Orthogonal Matrices and Inverse Iteration
 <section_orthogonal_matrices_and_inverse_iteration>
 
-We know that if $A in CC^(m times m), det(A) != 0$ has $Lambda subset RR := {lambda_j}$ as eigenvalues, then the eigenvalues of $inv(A, 1)$ are $inv(lambda_j, 1)$. Similarly the eigenvalues of $A + phi I$ are $lambda_j + phi$. So the eigenvalues of $inv((A - mu I), 1), mu in RR without Lambda$ are:
-
-$
-  hat(lambda_j) = 1 / (lambda_j - mu)
-$
-
-So let $Q in CC^(m times m)$ be an orthogonal matrix. We are interested in applying invers iteration to $Q$.
+Let $Q in CC^(m times m)$ be an orthogonal matrix. Using results from @section_inverse_iteration, we are interested in applying invers iteration to $Q$.
 
 We know that the eigenvalues of $Q$ are on the unit circle, so if $mu$ is close to an eigenvalue $lambda_j$, $hat(lambda)_j$ will be huge (dominant), which makes power iteration converge to the eigenvector associated to $hat(lambda)_j$, which is the eigenvector associated to $lambda_j$. The fact that the eigenvalues are on the unit circle also contributes to the convergence of the method.
 
