@@ -1,7 +1,5 @@
 # nla_assignment_3
 
-![FGV Logo](https://emap.fgv.br/sites/default/themes/custom/emap/logo.svg)
-
 **Undergraduate Numerical Linear Algebra - Assignment 3 Solutions**
 
 ---
