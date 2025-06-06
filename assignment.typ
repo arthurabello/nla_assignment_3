@@ -117,6 +117,7 @@ import pandas as pd
 import math
 from IPython.display import display, Markdown
 from ast import literal_eval
+import re
 ```
 
 The following function calculates the Householder reflectors that reduce a matrix to Hessenberg form. It returns the reflector vectors, the compact Hessenberg matrix $H$, and the accumulated orthogonal factor $Q$.
